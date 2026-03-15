@@ -1,5 +1,313 @@
-<!doctype html>
-<meta charset="utf-8">
-<title>Prueba Inventario</title>
-<h1 style="font-family:sans-serif">Página cargada correctamente ✅</h1>
-<p>GitHub Pages funciona, ahora pondremos la versión completa.</p>
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Inventario</title><style>
+:root{--bg:#f6f7fb;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;--pri:#2563eb;--ok:#059669;--bad:#b91c1c}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.top{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+h1{font-size:20px;margin:0}
+.row{display:flex;gap:8px;align-items:center}
+.tabs button{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+.tabs .active{background:var(--pri);border-color:var(--pri);color:#fff}
+.grid{display:grid;gap:12px}
+.g-2{grid-template-columns:1fr 1fr}
+.g-3{grid-template-columns:repeat(3,1fr)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px}
+.kpi .n{font-size:26px;font-weight:700}
+label{font-size:12px;color:var(--muted);display:block;margin:4px 0}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:10px;outline:none}
+input:focus,select:focus{border-color:var(--pri)}
+.btn{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.bad{background:#fff;border-color:#fecaca;color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px;border-bottom:1px solid var(--border);text-align:left}
+thead th{background:#f3f4f6}
+.right{text-align:right}
+.muted{color:var(--muted)}
+.danger{color:var(--bad);font-weight:600}
+.nowrap{white-space:nowrap}
+@media(max-width:900px){.g-3{grid-template-columns:1fr}.g-2{grid-template-columns:1fr}}
+</style></head>
+<body>
+<div class="top"><div class="wrap"><div class="row" style="justify-content:space-between;padding:10px 0">
+<h1>Bodega Regional · Control de Inventario</h1>
+<div class="row">
+<button class="btn ok" id="btnEjemplo">Cargar ejemplo</button>
+<button class="btn bad" id="btnBorrar">Borrar todo</button>
+</div></div>
+<div class="tabs row" style="padding:0 0 10px 0">
+<button data-tab="inicio">Inicio</button>
+<button data-tab="inventario">Inventario</button>
+<button class="active" data-tab="movimientos">Movimientos</button>
+<button data-tab="reportes">Reportes</button>
+<button data-tab="config">Configuración</button>
+</div></div></div>
+
+<main class="wrap" id="main"></main>
+
+<footer class="wrap" style="padding:20px 16px 40px">
+<div class="muted" style="font-size:12px">Funciona offline (LocalStorage). Exporta CSV (Excel) y genera respaldos JSON.</div>
+</footer>
+
+<script>
+// --- APP COMPLETA (compactada) ---
+// Para que GitHub Pages no la rompa durante el copiado
+(()=>{
+
+const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
+const DEST_TYPES=["Departamento","Jardín","Otro"];
+const LS={items:"inv_items",moves:"inv_moves",dests:"inv_dests"};
+const $=(s,c=document)=>c.querySelector(s);
+const $$=(s,c=document)=>Array.from(c.querySelectorAll(s));
+const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
+const todayISO=()=>{const d=new Date();d.setHours(0,0,0,0);return d.toISOString().slice(0,10)};
+const parseISO=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const startOfWeek=date=>{const d=new Date(date);const g=d.getDay();const diff=g===0?-6:1-g;d.setDate(d.getDate()+diff);d.setHours(0,0,0,0);return d};
+const endOfWeek=date=>{const s=startOfWeek(date);const e=new Date(s);e.setDate(s.getDate()+6);e.setHours(23,59,59,999);return e};
+const within=(ds,a,b)=>{const t=parseISO(ds).getTime();const aa=a?parseISO(a).getTime():-Infinity;const bb=b?parseISO(b).getTime()+24*3600*1000-1:Infinity;return t>=aa&&t<=bb};
+const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))||f}catch{return f}};
+const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+
+let state={
+ tab:"movimientos",
+ items:load(LS.items,[]),
+ moves:load(LS.moves,[]),
+ dests:load(LS.dests,[]),
+ buscar:"",catFiltro:"",
+ itemForm:{id:null,code:"",name:"",category:"",unit:"Unidad",minStock:0,initialStock:0},
+ moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""},
+ fromDate:startOfWeek(new Date()).toISOString().slice(0,10),
+ toDate:endOfWeek(new Date()).toISOString().slice(0,10)
+};
+
+const persist=()=>{save(LS.items,state.items);save(LS.moves,state.moves);save(LS.dests,state.dests)};
+
+const stockByItem=()=>{const o={};for(const it of state.items)o[it.id]=Number(it.initialStock||0);for(const mv of state.moves){o[mv.itemId]=(o[mv.itemId]||0)+(mv.type==="entrada"?1:-1)*Number(mv.qty)}return o};
+
+const kpis=()=>{const sb=stockByItem();const wF=startOfWeek(new Date()).toISOString().slice(0,10);const wT=endOfWeek(new Date()).toISOString().slice(0,10);let en=0,sa=0;for(const mv of state.moves){if(within(mv.date,wF,wT))mv.type==="entrada"?en+=Number(mv.qty):sa+=Number(mv.qty);}const low=state.items.filter(it=>(sb[it.id]||0)<=Number(it.minStock||0));return{totalItems:state.items.length,totalExist:state.items.reduce((a,b)=>a+(sb[b.id]||0),0),weekIn:en,weekOut:sa,lowCount:low.length}};
+
+const downloadCSV=(file,rows)=>{const esc=s=>{if(!s)return"";const t=String(s).replace(/"/g,'""');return/[",\n;]/.test(t)?`"${t}"`:t};const csv=rows.map(r=>r.map(esc).join(",")).join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=file+".csv";a.click();};
+
+const exportInventario=()=>{const sb=stockByItem(),rows=[["Código","Artículo","Categoría","Unidad","Stock mínimo","Existencias"]];for(const it of state.items)rows.push([it.code||"",it.name,it.category,it.unit,Number(it.minStock),sb[it.id]||0]);downloadCSV("inventario_"+todayISO(),rows)};
+
+const exportMovimientos=()=>{const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]],m=state.moves.filter(v=>within(v.date,state.fromDate,state.toDate)),imap=Object.fromEntries(state.items.map(i=>[i.id,i]));for(const mv of m){const it=imap[mv.itemId];rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest,mv.destType,mv.notes])}downloadCSV("movs_"+state.fromDate+"_"+state.toDate,rows)};
+
+const exportReporteSemanal=()=>{const m=state.moves.filter(v=>within(v.date,state.fromDate,state.toDate)),imap=Object.fromEntries(state.items.map(i=>[i.id,i]));
+const grp=new Map();
+for(const mv of m){
+ const s=startOfWeek(parseISO(mv.date)).toISOString().slice(0,10);
+ const e=endOfWeek(parseISO(mv.date)).toISOString().slice(0,10);
+ const key=s+"_"+e+"_"+(mv.dest||"-");
+ if(!grp.has(key))grp.set(key,{s,e,dest:(mv.dest||"-"),in:0,out:0,det:[]});
+ const g=grp.get(key);mv.type==="entrada"?g.in+=Number(mv.qty):g.out+=Number(mv.qty);
+ g.det.push({f:mv.date,t:mv.type,a:imap[mv.itemId]?.name||"(Eliminado)",q:mv.qty});
+}
+const rows=[["Semana","Destino","Entradas","Salidas","Detalle"]];
+for(const g of [...grp.values()].sort((a,b)=>a.s.localeCompare(b.s))){
+ rows.push([`${g.s} a ${g.e}`,g.dest,g.in,g.out,g.det.map(d=>`${d.a} | ${d.f} | ${d.t} | ${d.q}`).join("; ")]);
+}
+downloadCSV("reporte_"+state.fromDate+"_"+state.toDate,rows)
+};
+
+const render=()=>{
+const main=$("#main"),sb=stockByItem(),KP=kpis();
+const tabs={
+inicio:`<section class="grid g-3">
+<div class="card kpi"><div class="muted">Ítems</div><div class="n">${KP.totalItems}</div></div>
+<div class="card kpi"><div class="muted">Existencias totales</div><div class="n">${KP.totalExist}</div></div>
+<div class="card kpi"><div class="muted">Entradas (semana)</div><div class="n">${KP.weekIn}</div></div>
+<div class="card kpi"><div class="muted">Salidas (semana)</div><div class="n">${KP.weekOut}</div></div>
+</section>`,
+inventario:`<section class="grid g-2">
+<div class="card">
+<h3>Nuevo/Editar ítem</h3>
+<label>Código</label><input id="it_code" value="${state.itemForm.code}">
+<label>Artículo *</label><input id="it_name" value="${state.itemForm.name}">
+<label>Categoría *</label><select id="it_cat">${["",...CATS].map(c=>`<option ${state.itemForm.category===c?"selected":""}>${c||"-- Seleccione --"}</option>`).join("")}</select>
+<label>Unidad</label><input id="it_unit" value="${state.itemForm.unit}">
+<label>Stock mínimo</label><input id="it_min" type="number" value="${state.itemForm.minStock}">
+<label>Stock inicial</label><input id="it_init" type="number" value="${state.itemForm.initialStock}">
+<button class="btn pri" id="btnSaveItem">Guardar</button>
+<button class="btn" id="btnClearItem">Limpiar</button>
+</div>
+<div class="card">
+<h3>Listado</h3>
+<label>Buscar</label><input id="buscar" value="${state.buscar}">
+<label>Categoría</label><select id="catFiltro">${["",...CATS].map(c=>`<option ${state.catFiltro===c?"selected":""}>${c||"Todas"}</option>`).join("")}</select>
+<button class="btn ok" id="btnExpInv">Exportar Excel</button>
+<div style="overflow:auto">
+<table><thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th><th></th></tr></thead>
+<tbody>${
+(()=>{
+ const q=state.buscar.toLowerCase().trim();
+ const list=state.items.filter(it=>{
+   if(state.catFiltro&&it.category!==state.catFiltro) return false;
+   return !q||it.name.toLowerCase().includes(q)||(it.code||"").toLowerCase().includes(q)
+ });
+ if(!list.length)return`<tr><td colspan=7 class="muted">Sin resultados</td></tr>`;
+ return list.map(it=>`
+ <tr><td>${it.code||""}</td><td>${it.name}</td><td>${it.category}</td><td>${it.unit}</td>
+ <td>${it.minStock}</td><td class="${(sb[it.id]||0)<=it.minStock?"danger":""}">${sb[it.id]||0}</td>
+ <td><button class="btn" data-edit-item="${it.id}">Editar</button>
+ <button class="btn bad" data-del-item="${it.id}">X</button></td></tr>`).join("")
+})()
+}</tbody></table>
+</div></div></section>`,
+
+movimientos:`<section class="grid g-2">
+<div class="card">
+<h3>Registrar movimiento</h3>
+<label>Fecha</label><input id="mv_date" type="date" value="${state.moveForm.date}">
+<label>Tipo</label><select id="mv_type"><option ${state.moveForm.type==="entrada"?"selected":""}>entrada</option><option ${state.moveForm.type==="salida"?"selected":""}>salida</option></select>
+<label>Artículo</label><select id="mv_item"><option value="">-- Seleccione --</option>${
+state.items.map(i=>`<option value="${i.id}" ${i.id===state.moveForm.itemId?"selected":""}>${i.name}</option>`).join("")
+}</select>
+<label>Cantidad</label><input id="mv_qty" type="number" min="1" value="${state.moveForm.qty}">
+<label>Tipo Destino</label><select id="mv_destType">${DEST_TYPES.map(t=>`<option ${t===state.moveForm.destType?"selected":""}>${t}</option>`).join("")}</select>
+<label>Destino</label><input id="mv_dest" value="${state.moveForm.dest}" list="ls_dests">
+<datalist id="ls_dests">${state.dests.map(d=>`<option>${d}</option>`).join("")}</datalist>
+<label>Notas</label><input id="mv_notes" value="${state.moveForm.notes}">
+<button class="btn pri" id="btnSaveMove">Guardar</button>
+<button class="btn" id="btnClearMove">Limpiar</button>
+</div>
+
+<div class="card">
+<h3>Movimientos</h3>
+<label>Desde</label><input id="fromDate" type="date" value="${state.fromDate}">
+<label>Hasta</label><input id="toDate" type="date" value="${state.toDate}">
+<button class="btn ok" id="btnExpMovs">Exportar Excel</button>
+<div style="overflow:auto">
+<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Categoría</th><th>Cantidad</th><th>Destino</th><th>Notas</th><th></th></tr></thead>
+<tbody>${
+(()=>{
+ const im=Object.fromEntries(state.items.map(i=>[i.id,i]));
+ const list=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
+ if(!list.length)return`<tr><td colspan=8 class="muted">Sin movimientos</td></tr>`;
+ return list.map(mv=>{
+ const it=im[mv.itemId];
+ return `<tr>
+ <td>${mv.date}</td>
+ <td>${mv.type}</td>
+ <td>${it?it.name:"(Eliminado)"}</td>
+ <td>${it?it.category:""}</td>
+ <td>${mv.qty}</td>
+ <td>${mv.dest}</td>
+ <td>${mv.notes}</td>
+ <td><button class="btn" data-edit-move="${mv.id}">Editar</button>
+ <button class="btn bad" data-del-move="${mv.id}">X</button></td>
+ </tr>`;
+ }).join("");
+})()
+}</tbody></table>
+</div>
+</div>
+</section>`,
+
+reportes:`<section class="grid">
+<div class="card">
+<h3>Reporte semanal</h3>
+<label>Desde</label><input id="fromDate" type="date" value="${state.fromDate}">
+<label>Hasta</label><input id="toDate" type="date" value="${state.toDate}">
+<button class="btn" id="btnWeek">Semana actual</button>
+<button class="btn ok" id="btnExpRep">Exportar Excel</button>
+</div>
+</section>`,
+
+config:`<section class="grid g-2">
+<div class="card"><h3>Categorías sugeridas</h3><ul>${CATS.map(c=>`<li>${c}</li>`).join("")}</ul></div>
+<div class="card"><h3>Respaldo</h3>
+<button class="btn" id="btnBackup">Descargar JSON</button>
+<label class="btn" style="cursor:pointer">Cargar JSON<input id="fileRestore" type="file" accept="application/json" style="display:none"></label>
+</div>
+</section>`
+};
+
+main.innerHTML=tabs[state.tab];
+$$(".tabs button").forEach(b=>{b.classList.toggle("active",b.dataset.tab===state.tab);b.onclick=()=>set({tab:b.dataset.tab})});
+
+if(state.tab==="inicio"){}
+
+if(state.tab==="inventario"){
+$("#buscar").oninput=e=>set({buscar:e.target.value});
+$("#catFiltro").onchange=e=>set({catFiltro:e.target.value});
+$("#btnExpInv").onclick=exportInventario;
+$("#btnSaveItem").onclick=()=>{
+ const f={
+  id:state.itemForm.id||uid(),
+  code:$("#it_code").value.trim(),
+  name:$("#it_name").value.trim(),
+  category:$("#it_cat").value.trim(),
+  unit:$("#it_unit").value.trim(),
+  minStock:Number($("#it_min").value),
+  initialStock:Number($("#it_init").value)
+ };
+ if(!f.name||!f.category)return alert("Completa los campos obligatorios.");
+ let items=[...state.items];
+ if(state.itemForm.id)items=items.map(it=>it.id===state.itemForm.id?f:it);
+ else items=[f,...items];
+ set({items,itemForm:{id:null,code:"",name:"",category:"",unit:"Unidad",minStock:0,initialStock:0}});
+};
+$("#btnClearItem").onclick=()=>set({itemForm:{id:null,code:"",name:"",category:"",unit:"Unidad",minStock:0,initialStock:0}});
+$$("[data-edit-item]").forEach(b=>b.onclick=()=>{const it=state.items.find(x=>x.id===b.dataset.editItem);if(it)set({itemForm:{...it}})});
+$$("[data-del-item]").forEach(b=>b.onclick=()=>{if(!confirm("¿Eliminar ítem?"))return;set({items:state.items.filter(x=>x.id!==b.dataset.delItem)})});
+}
+
+if(state.tab==="movimientos"){
+const sync=()=>{state.moveForm={id:state.moveForm.id,date:$("#mv_date").value,type:$("#mv_type").value,itemId:$("#mv_item").value,qty:Number($("#mv_qty").value),destType:$("#mv_destType").value,dest:$("#mv_dest").value,notes:$("#mv_notes").value}};
+$("#mv_date").onchange=()=>{sync();set({moveForm:{...state.moveForm}})};
+$("#mv_type").onchange=()=>{sync();set({moveForm:{...state.moveForm}})};
+$("#mv_item").onchange=()=>{sync();set({moveForm:{...state.moveForm}})};
+$("#mv_destType").onchange=()=>{sync();set({moveForm:{...state.moveForm}})};
+$("#mv_dest").oninput=sync;
+$("#mv_notes").oninput=sync;
+$("#mv_qty").onchange=()=>{sync();set({moveForm:{...state.moveForm}})};
+$("#fromDate").onchange=e=>set({fromDate:e.target.value});
+$("#toDate").onchange=e=>set({toDate:e.target.value});
+$("#btnExpMovs").onclick=exportMovimientos;
+$("#btnSaveMove").onclick=()=>{
+ const f={...state.moveForm};
+ if(!f.itemId||!f.date)return alert("Completa los campos obligatorios.");
+ const newMv={id:f.id||uid(),date:f.date,type:f.type,itemId:f.itemId,qty:Number(f.qty),destType:f.destType,dest:f.dest.trim(),notes:f.notes.trim()};
+ let mv=[...state.moves];
+ if(f.id)mv=mv.map(m=>m.id===f.id?newMv:m);
+ else mv=[newMv,...mv];
+ const dests=newMv.dest?[...new Set([newMv.dest,...state.dests])]:state.dests;
+ set({moves:mv,dests,moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""}});
+};
+$("#btnClearMove").onclick=()=>set({moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""}});
+$$("[data-edit-move]").forEach(b=>b.onclick=()=>{const mv=state.moves.find(x=>x.id===b.dataset.editMove);if(mv)set({moveForm:{...mv}})});
+$$("[data-del-move]").forEach(b=>b.onclick=()=>{if(!confirm("¿Eliminar movimiento?"))return;set({moves:state.moves.filter(x=>x.id!==b.dataset.delMove)})});
+}
+
+if(state.tab==="reportes"){
+$("#fromDate").onchange=e=>set({fromDate:e.target.value});
+$("#toDate").onchange=e=>set({toDate:e.target.value});
+$("#btnWeek").onclick=()=>set({fromDate:startOfWeek(new Date()).toISOString().slice(0,10),toDate:endOfWeek(new Date()).toISOString().slice(0,10)});
+$("#btnExpRep").onclick=exportReporteSemanal;
+}
+
+if(state.tab==="config"){
+$("#btnBackup").onclick=()=>{
+ const d={items:state.items,moves:state.moves,dests:state.dests};
+ const blob=new Blob([JSON.stringify(d)],{type:"application/json"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="respaldo.json";a.click();
+};
+$("#fileRestore").onchange=e=>{
+ const f=e.target.files?.[0];if(!f)return;
+ const r=new FileReader();
+ r.onload=()=>{try{const d=JSON.parse(r.result);if(d.items&&d.moves){set({items:d.items,moves:d.moves,dests:d.dests||[]});alert("Respaldo cargado")}else alert("JSON inválido");}catch{alert("Error leyendo JSON")}};
+ r.readAsText(f);
+};
+}
+
+};
+
+// --- Render inicial ---
+render();
+
+})();
+</script>
+
+</body>
+</html>

@@ -35,6 +35,7 @@
     .muted{color:var(--muted)}
     .danger{color:var(--bad);font-weight:600}
     .warn{color:var(--warn);font-weight:600}
+    .ok{color:var(--ok);font-weight:600}
     .nowrap{white-space:nowrap}
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}
     .badge.low{background:#fee2e2;color:#991b1b}
@@ -146,9 +147,7 @@
     }
 
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
-    // >>>>>>>>> Cambiado: agregado "Bodega Peñuelas"
-    const DEST_TYPES=["Departamento","Jardín","Bodega Peñuelas","Otro"];
-    // <<<<<<<<<
+    const DEST_TYPES=["Departamento","Jardín","Bodega Peñuelas","Otro"]; // ← incluye Bodega Peñuelas
 
     const LS={
       items:"inv_off_items_v1",
@@ -252,7 +251,7 @@
       const main=$("#main");
       const sb=stockByItem();
 
-      // Umbrales para Inicio (según tu pedido previo)
+      // Umbrales para Inicio
       const LOW_THR = 15;
       const HIGH_THR = 50;
 
@@ -338,7 +337,8 @@
                             <td>${it.category}</td>
                             <td>${it.unit||'Unidad'}</td>
                             <td>${Number(it.minStock||0)}</td>
-                            <td class="danger">${Number(sb[it.id]||0)}</td>
+                            <!-- CAMBIO AQUÍ: antes era class="danger", ahora en VERDE con class="ok" -->
+                            <td class="ok">${Number(sb[it.id]||0)}</td>
                           </tr>
                         `).join('')
                       }
@@ -753,7 +753,7 @@ Arcoíris
             if(!map.has(key)) map.set(key,{s,e,dest:mv.dest||'-',in:0,out:0,det:[]});
             const n = map.get(key);
             if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
-            n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:"(Eliminado)",cantidad:mv.qty});
+            n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
           }
           const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
           if(arr.length===0) return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;

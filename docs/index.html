@@ -55,6 +55,13 @@
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
     .toast.error { background: #b91c1c; }
+
+    /* === Ensanchar el campo Destino/Origen para que se vea completa la frase === */
+    #mv_dest{
+      width: 100%;
+      min-width: 600px;   /* Ajusta a 650/700 si lo deseas aún más ancho */
+      max-width: 100%;
+    }
   </style>
 </head>
 
@@ -204,7 +211,7 @@
         if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
         n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:"(Eliminado)",cantidad:mv.qty});
       }
-      const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+      const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare(b.dest||'','es',{sensitivity:'base'}));
       const rows=[["Semana (Lun-Dom)","Destino","Entradas","Salidas","Detalle"]];
       for(const g of arr){
         rows.push([`${g.s} a ${g.e}`, g.dest, g.in, g.out, g.det.map(d=>`${d.articulo} | ${d.fecha} | ${d.tipo} | ${d.cantidad}`).join('; ')]);
@@ -338,7 +345,7 @@
 
         /* ===== MOVIMIENTOS: Registrar movimiento MÁS ANCHA ===== */
         movimientos: `
-          <!-- grid personalizado: 1.4fr (izquierda) / 1fr (derecha) -->
+          <!-- grid personalizado: 1.4fr (izq) / 1fr (der) -->
           <section style="display:grid;grid-template-columns:1.4fr 1fr;gap:12px">
             <div class="card">
               <h3>Registrar movimiento</h3>
@@ -370,7 +377,7 @@
                 </div>
                 <div>
                   <label>Destino/Origen</label>
-                  <input id="mv_dest" value="${state.moveForm.dest}" list="ls_dests" placeholder="Ej.: Jardín Las Flores"/>
+                  <input id="mv_dest" value="${state.moveForm.dest}" list="ls_dests" placeholder="Ej.: El Molino de las Delicias"/>
                   <datalist id="ls_dests">
                     ${state.dests.slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).map(d=>`<option value='${d}'></option>`).join('')}
                   </datalist>
@@ -686,17 +693,16 @@ Arcoíris
         btnDest && (btnDest.onclick=()=>{ repContainer.innerHTML=buildTablePorDestino(); setActive(btnDest); });
         $("#btnExpRep").onclick=()=> exportReporteSemanal();
         $("#btnExpRepDest").onclick=()=>{
-          const movs=(()=>{ const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it])); const list=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
-            const map=new Map(); for(const mv of list){ const dest=mv.dest&&mv.dest.trim()?mv.dest.trim():'(Sin destino)';
-              if(!map.has(dest)) map.set(dest,{dest,in:0,out:0,det:[]}); const it=itemsMap[mv.itemId];
-              const g=map.get(dest); if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
+          const rows=(()=>{ const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it])); const list=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
+            const map=new Map(); for(const mv of list){ const dest=mv.dest&&mv.dest.trim()?mv.dest.trim():'(Sin destino)'; if(!map.has(dest)) map.set(dest,{dest,in:0,out:0,det:[]});
+              const it=itemsMap[mv.itemId]; const g=map.get(dest); if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
               g.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',categoria:it?it.category:'',cantidad:mv.qty}); }
             const arr=Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
             const rows=[["Jardín/Destino","Entradas","Salidas","Detalle (fecha · tipo · artículo (categoría) · cantidad)"]];
             for(const g of arr){ const detalle=g.det.sort((a,b)=> a.fecha.localeCompare(b.fecha)||a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
               .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`).join('; '); rows.push([g.dest,g.in,g.out,detalle]); }
             return rows; })();
-          downloadCSV(`reporte_por_destino_${state.fromDate}_a_${state.toDate}`, movs);
+          downloadCSV(`reporte_por_destino_${state.fromDate}_a_${state.toDate}`, rows);
         };
         $("#btnExpSimple").onclick=()=>{ const rows=buildRowsSimpleJPQF(); if(rows.length<=1){ alert('No hay ENTREGAS (salidas) en el rango.'); return; } downloadCSV(`entregas_por_jardin_${state.fromDate}_a_${state.toDate}`, rows); };
         $("#btnExpPerGarden").onclick=()=>{

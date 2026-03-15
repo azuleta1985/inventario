@@ -68,10 +68,7 @@
 
   <script>
   (function(){
-    // ===== Utilidades y estado =====
-    const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
-    const DEST_TYPES=["Departamento","Jardín","Otro"];
-    const LS={items:"inv_off_items_v1",moves:"inv_off_moves_v1",dests:"inv_off_dests_v1"};
+    // ===== Helpers =====
     const $=(s,c=document)=>c.querySelector(s);
     const $$=(s,c=document)=>Array.from(c.querySelectorAll(s));
     const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -82,38 +79,54 @@
     const within=(dateStr,aStr,bStr)=>{const t=parseISO(dateStr).getTime();const a=aStr?parseISO(aStr).getTime():-Infinity;const b=bStr?parseISO(bStr).getTime()+24*3600*1000-1:Infinity;return t>=a&&t<=b};
     const load=(k,fb)=>{try{const x=localStorage.getItem(k);return x?JSON.parse(x):fb}catch{return fb}};
     const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+    const qs=(name)=>{ try{ return new URL(location.href).searchParams.get(name); } catch{ return null; } };
+    const unique=(arr)=>Array.from(new Set(arr));
 
-    let state={tab:"movimientos",items:load(LS.items,[]),moves:load(LS.moves,[]),dests:load(LS.dests,[]),
+    const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
+    const DEST_TYPES=["Departamento","Jardín","Otro"];
+    const LS={items:"inv_off_items_v1",moves:"inv_off_moves_v1",dests:"inv_off_dests_v1"};
+
+    let state={
+      tab:"movimientos",
+      items:load(LS.items,[]),
+      moves:load(LS.moves,[]),
+      dests:load(LS.dests,[]),
       buscar:"",catFiltro:"",
       itemForm:{id:null,code:"",name:"",category:"",unit:"Unidad",minStock:0,initialStock:0},
       moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""},
       fromDate:startOfWeek(new Date()).toISOString().slice(0,10),
-      toDate:endOfWeek(new Date()).toISOString().slice(0,10)};
+      toDate:endOfWeek(new Date()).toISOString().slice(0,10)
+    };
 
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // ===== Semilla automática (primer ingreso en cualquier dispositivo) =====
-    (function seedOnFirstLoad(){
+    // ===== Semilla automática + forzado por URL (?seed=1) =====
+    function applySeed(){
+      const seedItems = [
+        { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'IMP-085A',    name:'Tóner 85 A',   category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'EQP-TOL-001', name:'Toldo Completo', category:'Equipamiento',       unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'ASE-BAS-5055',name:'Bolsa Basura 50x55x10 Unidades Paquete', category:'Artículos de aseo', unit:'Paquete', minStock:0, initialStock:0 },
+        { id: uid(), code:'ASE-DET-800', name:'Detergente en Polvo 800 Grs',           category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
+      ];
+      const seedDests = ['Bambi','Sol del Valle'];
+      state.items = seedItems;
+      state.dests = unique([...(state.dests||[]), ...seedDests]);
+      persist();
+      console.log('Semilla aplicada');
+    }
+
+    (function seedOnLoad(){
       try{
-        const noItems = !state.items || state.items.length === 0;
-        const noMoves = !state.moves || state.moves.length === 0;
-        if (noItems && noMoves) {
-          const seedItems = [
-            { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
-            { id: uid(), code:'IMP-085A',    name:'Tóner 85 A',   category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
-            { id: uid(), code:'EQP-TOL-001', name:'Toldo Completo', category:'Equipamiento',       unit:'Unidad',  minStock:0, initialStock:0 },
-            { id: uid(), code:'ASE-BAS-5055',name:'Bolsa Basura 50x55x10 Unidades Paquete', category:'Artículos de aseo', unit:'Paquete', minStock:0, initialStock:0 },
-            { id: uid(), code:'ASE-DET-800', name:'Detergente en Polvo 800 Grs',           category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 },
-            { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
-          ];
-          const seedDests = ['Bambi','Sol del Valle'];
-          state.items = seedItems;
-          state.dests = Array.from(new Set([...(state.dests||[]), ...seedDests]));
-          persist();
-          console.log('Semilla aplicada en este dispositivo');
+        const force = (qs('seed') === '1');
+        const isEmpty = !state.items || state.items.length===0;
+        if (isEmpty || force){
+          if (isEmpty){ applySeed(); }
+          console.log('seed param:', force, 'isEmpty:', isEmpty);
         }
-      } catch(e){ console.warn('Semilla: error opcional', e); }
+      }catch(e){ console.warn('Semilla: error opcional', e); }
     })();
 
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
@@ -254,6 +267,20 @@
                 <button class="btn bad" id="btnRemoveOne">Quitar ítem</button>
                 <button class="btn bad" id="btnRemoveAllItems">Quitar todos los ítems</button>
               </div>
+
+              <!-- Aviso/acción cuando no hay ítems en este dispositivo -->
+              ${(()=>{
+                if((state.items||[]).length>0) return '';
+                return `
+                  <div class="card" style="background:#fffbeb;border-color:#fde68a">
+                    <b>No hay ítems guardados en este dispositivo.</b>
+                    <p class="muted" style="margin:6px 0 10px">
+                      Puedes inicializar los datos base para comenzar inmediatamente.
+                    </p>
+                    <button class="btn pri" id="btnInitSeed">Inicializar datos base</button>
+                  </div>
+                `;
+              })()}
 
               <div style="overflow-x:auto">
                 <table>
@@ -461,7 +488,7 @@
         $$("[data-edit-item]").forEach(btn=> btn.onclick=()=>{ const it=state.items.find(x=>x.id===btn.dataset.editItem); if(!it) return; set({itemForm:{...it}}); });
         $$("[data-del-item]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar ítem? Se mantendrán los movimientos históricos.')) return; const id=btn.dataset.delItem; set({items: state.items.filter(it=>it.id!==id)}); });
 
-        // === NUEVO: Quitar ítem desde selector + Quitar todos los ítems ===
+        // NUEVOS: Quitar ítem desde selector + Quitar todos + Inicializar datos base
         const selRemove = $("#selRemoveItem");
         const btnRemoveOne = $("#btnRemoveOne");
         btnRemoveOne && (btnRemoveOne.onclick = ()=>{
@@ -478,6 +505,13 @@
           if(!state.items.length) return alert('No hay ítems para quitar');
           if(!confirm('Esto quitará TODOS los ítems. Los movimientos quedarán y mostrarán "(Eliminado)". ¿Continuar?')) return;
           set({ items: [] });
+        });
+
+        const btnInitSeed = $("#btnInitSeed");
+        btnInitSeed && (btnInitSeed.onclick = ()=>{
+          if(!confirm('Esto cargará los ítems base en este dispositivo. ¿Continuar?')) return;
+          applySeed();
+          render();
         });
       }
 

@@ -35,6 +35,26 @@
     .danger{color:var(--bad);font-weight:600}
     .nowrap{white-space:nowrap}
     @media (max-width:900px){.g-3{grid-template-columns:1fr}.g-2{grid-template-columns:1fr}}
+
+    /* ===== Aviso flotante (toast) ===== */
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background: #065f46; /* verde éxito */
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0,0,0,.18);
+      font-size: 14px;
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s ease, transform .25s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+    .toast.error { background: #b91c1c; } /* rojo error */
   </style>
 </head>
 
@@ -67,6 +87,9 @@
     </div>
   </footer>
 
+  <!-- Contenedor del toast -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
   <script>
   (function(){
     // ===== Helpers =====
@@ -83,7 +106,19 @@
     const qs=(name)=>{ try{ return new URL(location.href).searchParams.get(name); } catch{ return null; } };
     const unique=(arr)=>Array.from(new Set(arr));
 
-    // Backup encoder/decoder (para link/transferencia si hiciera falta)
+    // Toast reutilizable
+    function showToast(msg, type='ok', ms=2200){
+      const el = document.getElementById('toast');
+      if(!el) return;
+      el.textContent = msg;
+      el.classList.remove('error');
+      if(type==='error') el.classList.add('error');
+      el.classList.add('show');
+      clearTimeout(showToast.__t);
+      showToast.__t = setTimeout(()=> el.classList.remove('show'), ms);
+    }
+
+    // Backup encoder/decoder (por si algún día usas link con data)
     function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
     function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
 
@@ -111,11 +146,11 @@
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // ===== Lista OFICIAL de Jardines/Destinos =====
+    // Lista oficial de Jardines/Destinos
     function getOfficialDests(){ return load(LS.officialDests, []); }
     function setOfficialDests(list){ save(LS.officialDests, Array.from(new Set((list||[]).map(s=>String(s).trim()).filter(Boolean)))); }
 
-    // ===== Semillas de ítems base =====
+    // Semillas de ítems base
     function seedItems(){
       return [
         { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
@@ -198,7 +233,7 @@
         n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:"(Eliminado)",cantidad:mv.qty});
       }
       const rows=[["Semana (Lun-Dom)","Destino","Entradas","Salidas","Detalle (artículo | fecha | tipo | cantidad)"]];
-      Array.from(map.values()).sort((a,b)=>a.s.localeCompare(b.s)||(a.dest||"").localeCompare((b.dest||""),"es",{sensitivity:"base"})).forEach(g=>{
+      Array.from(map.values()).sort((a,b)=>a.s.localeCompare(b.s)||(a.dest||"").localeCompare((b.dest||""),"es",{sensitivity:'base'})).forEach(g=>{
         const det=g.det.map(d=>`${d.articulo} | ${d.fecha} | ${d.tipo} | ${d.cantidad}`).join("; ");
         rows.push([`${g.s} a ${g.e}`,g.dest,g.in,g.out,det]);
       });
@@ -426,7 +461,7 @@ Arcoíris
 
       // ===== Inventario =====
       if(state.tab==='inventario'){
-        // Handlers sin re-render completo
+        // Handlers sin re-render completo (buscador fluido)
         $("#buscar").oninput = (e)=>{ state.buscar = e.target.value; renderInventarioRows(); };
         $("#catFiltro").onchange = (e)=>{ state.catFiltro = e.target.value; renderInventarioRows(); };
 
@@ -453,7 +488,7 @@ Arcoíris
 
         $("#btnClearItem").onclick = ()=> set({itemForm:{id:null, code:'', name:'', category:'', unit:'Unidad', minStock:0, initialStock:0}});
 
-        // Selector para quitar ítem y botón quitar todos (se recalculan tras cada repintado)
+        // Botones quitar ítem / quitar todos
         $("#btnRemoveOne").onclick = ()=>{
           const sel = $("#selRemoveItem");
           const id = (sel && sel.value) || '';
@@ -469,13 +504,14 @@ Arcoíris
           set({ items: [] });
         };
 
-        // Pintamos filas iniciales + llenamos selector de remover
+        // Pintado inicial y selector
         fillRemoveSelector();
         renderInventarioRows();
       }
 
       // ===== Movimientos =====
       if(state.tab==='movimientos'){
+        // Sincronizador ligero (para cambios de UI)
         const syncLight=()=>{
           state.moveForm = {
             id: state.moveForm.id,
@@ -488,88 +524,95 @@ Arcoíris
             notes: $("#mv_notes").value
           };
         };
-        const syncAndRender=()=> set({ moveForm:{...state.moveForm} });
+        const refreshForm=()=> set({ moveForm:{...state.moveForm} });
 
-        $("#mv_date").onchange = ()=>{ syncLight(); syncAndRender(); };
-        $("#mv_type").onchange = ()=>{ syncLight(); syncAndRender(); };
-        $("#mv_item").onchange = ()=>{ syncLight(); syncAndRender(); };
-        $("#mv_destType").onchange = ()=>{ syncLight(); syncAndRender(); };
+        $("#mv_date").onchange = ()=>{ syncLight(); refreshForm(); };
+        $("#mv_type").onchange = ()=>{ syncLight(); refreshForm(); };
+        $("#mv_item").onchange = ()=>{ syncLight(); refreshForm(); };
+        $("#mv_destType").onchange = ()=>{ syncLight(); refreshForm(); };
         $("#mv_dest").oninput = syncLight; $("#mv_notes").oninput = syncLight;
-        $("#mv_qty").onchange = ()=>{ syncLight(); syncAndRender(); };
+        $("#mv_qty").onchange = ()=>{ syncLight(); refreshForm(); };
 
         $("#fromDate").onchange = e=> set({fromDate:e.target.value});
         $("#toDate").onchange = e=> set({toDate:e.target.value});
 
         $("#btnExpMovs").onclick = exportMovimientos;
 
-        // Comprobante .doc (HTML)
-        $("#btnWord") && ($("#btnWord").onclick = async ()=>{
-          try{
-            const date = prompt('Fecha del comprobante (YYYY-MM-DD):', state.moveForm?.date || state.fromDate || '');
-            if (!date) return;
-            const dest = prompt('Destino/Establecimiento:', state.moveForm?.dest || '');
-            if (dest === null) return;
+        // === Guardar (fix): guarda de verdad y muestra toast de éxito ===
+        const btnSaveMove = document.getElementById('btnSaveMove');
+        if(btnSaveMove){
+          btnSaveMove.onclick = ()=>{
+            const f = {
+              id: state.moveForm.id,
+              date: document.getElementById('mv_date')?.value || '',
+              type: document.getElementById('mv_type')?.value || '',
+              itemId: document.getElementById('mv_item')?.value || '',
+              qty: Number(document.getElementById('mv_qty')?.value || 0),
+              destType: document.getElementById('mv_destType')?.value || 'Departamento',
+              dest: (document.getElementById('mv_dest')?.value || '').trim(),
+              notes: (document.getElementById('mv_notes')?.value || '').trim()
+            };
 
-            const itemsMap = Object.fromEntries(state.items.map(it => [it.id, it]));
-            const movs = state.moves.filter(m => m.type==='salida' && m.date===date && (!dest || (m.dest||'')===dest));
-            if (movs.length === 0) { alert('No hay salidas que coincidan con esa fecha/destino.'); return; }
-
-            const agg = new Map();
-            for (const mv of movs) {
-              const name = itemsMap[mv.itemId]?.name || '(Eliminado)';
-              const qty  = Number(mv.qty||0);
-              agg.set(name, (agg.get(name)||0) + qty);
+            if(!f.date || !f.type || !f.itemId){
+              showToast('Completa Fecha, Tipo y Artículo', 'error', 2600);
+              return;
+            }
+            if(f.qty<=0){
+              showToast('La cantidad debe ser mayor a 0', 'error', 2600);
+              return;
             }
 
-            const safe = (v)=> String(v||'').replace(/[&<>]/g, s=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[s]));
-            const rows = Array.from(agg.entries())
-              .map(([producto, cantidad]) => `<tr><td style="border:1px solid #000;padding:6px;text-align:center">${cantidad}</td><td style="border:1px solid #000;padding:6px">${safe(producto)}</td></tr>`)
-              .join('');
+            const newMv = {
+              id: f.id || uid(),
+              date: f.date,
+              type: f.type,
+              itemId: f.itemId,
+              qty: f.qty,
+              destType: f.destType,
+              dest: f.dest,
+              notes: f.notes
+            };
 
-            const html = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Comprobante</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 12pt; }
-  h1   { text-align:center; font-size:16pt; }
-  table{ border-collapse:collapse; width:100%; margin-top:12px; }
-</style>
-</head>
-<body>
-  <h1>ENTREGA DE MATERIALES ESTABLECIMIENTOS</h1>
-  <p><b>NOMBRE:</b> ____________________ &nbsp;&nbsp;&nbsp; <b>FECHA:</b> ${safe(date)}</p>
-  <p><b>ESTABLECIMIENTO:</b> ${safe(dest||'-')}</p>
-  <table>
-    <thead>
-      <tr>
-        <th style="border:1px solid #000;padding:6px">CANTIDAD</th>
-        <th style="border:1px solid #000;padding:6px">PRODUCTO</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows}
-    </tbody>
-  </table>
-  <p style="margin-top:24px"><b>El funcionario que suscribe, indica que se recepciona correctamente todos los productos individualizados.</b></p>
-  <p style="margin-top:48px">__________________________________________________<br><b>FIRMA RECEPCIÓN</b></p>
-</body>
-</html>`.trim();
+            let moves = [...state.moves];
+            if(f.id){
+              moves = moves.map(m => m.id===f.id ? newMv : m);
+            }else{
+              moves = [newMv, ...moves];
+            }
 
-            const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
-            const safeDest = (dest || 'Destino').replace(/[^A-Za-z0-9_\- ]/g, '_').slice(0,50).trim();
-            const fname = `Comprobante_${safeDest}_${date}.doc`;
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = fname;
-            a.click();
-            URL.revokeObjectURL(a.href);
-          } catch (e) {
-            console.error(e);
-            alert('No se pudo generar el comprobante: ' + e.message);
-          }
+            const dests = newMv.dest ? Array.from(new Set([newMv.dest, ...state.dests])).slice(0,200) : state.dests;
+
+            const cleanForm = {
+              id:null,
+              date: todayISO(),
+              type: 'salida',
+              itemId: '',
+              qty: 1,
+              destType: 'Departamento',
+              dest: '',
+              notes: ''
+            };
+
+            set({ moves, dests, moveForm: cleanForm });
+            showToast('Movimiento guardado exitosamente', 'ok', 2200);
+          };
+        }
+
+        // Re-cablear Editar/Eliminar por fila
+        document.querySelectorAll("[data-edit-move]").forEach(btn=>{
+          btn.onclick = ()=>{
+            const mv = state.moves.find(x=>x.id===btn.dataset.editMove);
+            if(!mv) return;
+            set({ moveForm:{...mv} });
+          };
+        });
+        document.querySelectorAll("[data-del-move]").forEach(btn=>{
+          btn.onclick = ()=>{
+            if(!confirm("¿Eliminar movimiento?")) return;
+            const id = btn.dataset.delMove;
+            set({ moves: state.moves.filter(m=>m.id!==id) });
+            showToast('Movimiento eliminado', 'ok', 1800);
+          };
         });
       }
 
@@ -580,7 +623,7 @@ Arcoíris
         btnCfgSeedAll && (btnCfgSeedAll.onclick = ()=>{
           const hasItems = state.items && state.items.length>0;
           if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
-          applySeed(); render(); alert('Ítems base cargados en este dispositivo.');
+          applySeed(); render(); showToast('Ítems base cargados', 'ok', 1800);
         });
 
         // Respaldo clásico
@@ -595,9 +638,9 @@ Arcoíris
           reader.onload=()=>{
             try{
               const data = JSON.parse(reader.result);
-              if(data.items && data.moves){ set({items:data.items, moves:data.moves, dests:data.dests||[]}); alert('Respaldo cargado correctamente'); }
-              else alert('Archivo inválido');
-            }catch{ alert('No se pudo leer el archivo'); }
+              if(data.items && data.moves){ set({items:data.items, moves:data.moves, dests:data.dests||[]}); showToast('Respaldo cargado', 'ok', 1800); }
+              else showToast('Archivo inválido', 'error', 2200);
+            }catch{ showToast('No se pudo leer el archivo', 'error', 2200); }
           };
           reader.readAsText(f);
         };
@@ -622,10 +665,10 @@ Arcoíris
             a.download = `transfer_inventario_${(new Date()).toISOString().slice(0,10)}.json`;
             a.click();
             URL.revokeObjectURL(a.href);
-            alert('Archivo de transferencia creado. Envíalo a tu celular y luego impórtalo allí.');
+            showToast('Archivo de transferencia creado', 'ok', 1800);
           }catch(e){
             console.error(e);
-            alert('No se pudo crear el archivo de transferencia.');
+            showToast('No se pudo crear el archivo', 'error', 2200);
           }
         });
 
@@ -643,12 +686,12 @@ Arcoíris
                   dests: data.dests || state.dests
                 });
                 if (Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
-                alert('Transferencia importada. Datos guardados en este dispositivo.');
+                showToast('Transferencia importada', 'ok', 1800);
               } else {
-                alert('Archivo de transferencia inválido.');
+                showToast('Archivo de transferencia inválido', 'error', 2200);
               }
             }catch{
-              alert('No se pudo leer el archivo de transferencia.');
+              showToast('No se pudo leer el archivo', 'error', 2200);
             }
           };
           reader.readAsText(f);
@@ -673,28 +716,29 @@ Arcoíris
         btnLoadCur && (btnLoadCur.onclick = ()=>{
           const text = (state.dests||[]).slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).join('\n');
           txtOfficial.value = text;
-          alert('Cargados los destinos actuales al cuadro.');
+          showToast('Cargados destinos actuales', 'ok', 1500);
         });
 
         btnSaveOff && (btnSaveOff.onclick = ()=>{
           const list = linesToArray(txtOfficial.value);
-          if (!list.length) return alert('Pega primero tu lista oficial (uno por línea).');
+          if (!list.length) return showToast('Pega la lista oficial', 'error', 2000);
           setOfficialDests(list);
-          alert(`Lista OFICIAL guardada (${list.length} destinos).`);
+          showToast(`OFICIAL guardada (${list.length})`, 'ok', 1800);
         });
 
         btnApplyOff && (btnApplyOff.onclick = ()=>{
           const list = getOfficialDests();
-          if (!list.length) return alert('No hay lista OFICIAL guardada. Pégala y pulsa “Guardar como OFICIAL”.');
+          if (!list.length) return showToast('No hay OFICIAL guardada', 'error', 2000);
           set({ dests: unique(list) });
-          alert('Lista OFICIAL aplicada en este dispositivo.');
+          showToast('OFICIAL aplicada en este dispositivo', 'ok', 1800);
         });
 
         btnExpOff && (btnExpOff.onclick = ()=>{
           const list = getOfficialDests();
-          if (!list.length) return alert('No hay lista OFICIAL para descargar.');
+          if (!list.length) return showToast('No hay OFICIAL', 'error', 2000);
           const blob = new Blob([JSON.stringify({officialDests:list}, null, 2)], {type:'application/json'});
           const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='oficial_jardines.json'; a.click(); URL.revokeObjectURL(a.href);
+          showToast('OFICIAL descargada', 'ok', 1600);
         });
       }
     }
@@ -712,7 +756,7 @@ Arcoíris
       const tbody = document.getElementById('inv_rows');
       if(!tbody) return;
 
-      // cálculo local de existencias (para no depender del render global)
+      // cálculo local existencias
       const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); }
 
@@ -747,7 +791,7 @@ Arcoíris
         }).join('');
       }
 
-      // Re-cablear acciones por fila (porque tbody se regenera)
+      // Re-cablear edición/eliminación por fila
       document.querySelectorAll("[data-edit-item]").forEach(btn=>{
         btn.onclick = ()=>{
           const it = state.items.find(x=>x.id===btn.dataset.editItem);
@@ -763,7 +807,7 @@ Arcoíris
         };
       });
 
-      // Actualiza selector de quitar si cambia el listado
+      // Actualiza selector
       fillRemoveSelector();
     }
 
@@ -771,7 +815,7 @@ Arcoíris
     $("#btnSeedAll").onclick = ()=>{
       const hasItems = state.items && state.items.length>0;
       if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
-      applySeed(); render(); alert('Ítems base cargados correctamente.');
+      applySeed(); render(); showToast('Ítems base cargados', 'ok', 1800);
     };
 
     $("#btnEjemplo").onclick = ()=>{
@@ -790,9 +834,10 @@ Arcoíris
       ];
       const dests=['Recursos Humanos','Jardín Arcoíris'];
       set({items:[...items, ...state.items], moves:[...moves, ...state.moves], dests: Array.from(new Set([...dests, ...state.dests]))});
+      showToast('Ejemplo cargado', 'ok', 1600);
     };
 
-    $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos de este dispositivo. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); } };
+    $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos de este dispositivo. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); showToast('Datos borrados', 'ok', 1600); } };
 
     // ===== Render inicial & restauración desde enlace (si existiera) =====
     render();
@@ -806,7 +851,7 @@ Arcoíris
           state.items=data.items; state.moves=data.moves; state.dests=data.dests||[];
           if (Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
           persist();
-          alert('Datos restaurados desde el enlace. Ya están guardados en este dispositivo.');
+          showToast('Datos restaurados desde enlace', 'ok', 1800);
         }
       }catch{}
     })();

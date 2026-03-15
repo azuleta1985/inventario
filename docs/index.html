@@ -12,7 +12,7 @@
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
     .top{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
     h1{font-size:20px;margin:0}
-    .row{display:flex;gap:8px;align-items:center}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .tabs button{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
     .tabs .active{background:var(--pri);border-color:var(--pri);color:#fff}
     .grid{display:grid;gap:12px}
@@ -44,6 +44,7 @@
       <div class="row" style="justify-content:space-between;padding:10px 0">
         <h1>Bodega Regional · Control de Inventario</h1>
         <div class="row">
+          <button class="btn pri" id="btnSeedAll">Poner todos los ítems</button>
           <button class="btn ok" id="btnEjemplo">Cargar ejemplo</button>
           <button class="btn bad" id="btnBorrar">Borrar todo</button>
         </div>
@@ -101,8 +102,8 @@
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // ===== Semilla automática + forzado por URL (?seed=1) =====
-    function applySeed(){
+    // ===== Semilla base (lo que “Poner todos los ítems” insertará) =====
+    function seedData(){
       const seedItems = [
         { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
         { id: uid(), code:'IMP-085A',    name:'Tóner 85 A',   category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
@@ -112,18 +113,24 @@
         { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
       ];
       const seedDests = ['Bambi','Sol del Valle'];
+      return { seedItems, seedDests };
+    }
+
+    function applySeed(){
+      const { seedItems, seedDests } = seedData();
       state.items = seedItems;
       state.dests = unique([...(state.dests||[]), ...seedDests]);
       persist();
       console.log('Semilla aplicada');
     }
 
+    // ===== Semilla automática + forzado por URL (?seed=1) =====
     (function seedOnLoad(){
       try{
         const force = (qs('seed') === '1');
         const isEmpty = !state.items || state.items.length===0;
         if (isEmpty || force){
-          if (isEmpty){ applySeed(); }
+          if (isEmpty){ applySeed(); } // sólo si está vacío se insertan
           console.log('seed param:', force, 'isEmpty:', isEmpty);
         }
       }catch(e){ console.warn('Semilla: error opcional', e); }
@@ -626,14 +633,6 @@
         $$("[data-del-move]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar movimiento?')) return; const id=btn.dataset.delMove; set({moves: state.moves.filter(m=>m.id!==id)}); });
       }
 
-      // ===== Reportes
-      if(state.tab==='reportes'){
-        $("#fromDate").onchange = e=> set({fromDate:e.target.value});
-        $("#toDate").onchange = e=> set({toDate:e.target.value});
-        $("#btnWeek").onclick = ()=> set({fromDate: startOfWeek(new Date()).toISOString().slice(0,10), toDate: endOfWeek(new Date()).toISOString().slice(0,10)});
-        $("#btnExpRep").onclick = exportReporteSemanal;
-      }
-
       // ===== Config
       if(state.tab==='config'){
         $("#btnBackup").onclick = ()=>{
@@ -656,7 +655,16 @@
       }
     }
 
-    // ===== Botones superiores
+    // ===== Botones superiores =====
+    // “Poner todos los ítems”: inserta la semilla SIEMPRE (pide confirmación cuando ya hay datos)
+    $("#btnSeedAll").onclick = ()=>{
+      const hasItems = state.items && state.items.length>0;
+      if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
+      applySeed();
+      render();
+      alert('Ítems base cargados correctamente.');
+    };
+
     $("#btnEjemplo").onclick = ()=>{
       if(!confirm('Esto agregará datos de ejemplo. ¿Continuar?')) return;
       const items=[
@@ -674,12 +682,12 @@
       const dests=['Recursos Humanos','Jardín Arcoíris'];
       set({items:[...items, ...state.items], moves:[...moves, ...state.moves], dests: Array.from(new Set([...dests, ...state.dests]))});
     };
-    $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); } };
 
-    // ===== Render inicial
+    $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos de este dispositivo. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); } };
+
+    // ===== Render inicial & restauración desde enlace =====
     render();
 
-    // ===== Restaurar desde enlace ?data=...
     function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
     function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
     (function restoreFromQuery(){

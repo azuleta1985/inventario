@@ -36,30 +36,6 @@
     .nowrap{white-space:nowrap}
     @media (max-width:900px){.g-3{grid-template-columns:1fr}.g-2{grid-template-columns:1fr}}
   </style>
-
-  <!-- DOCX loader con fallbacks y anti‑caché (jsDelivr → unpkg → jsDelivr latest) -->
-  <script>
-  (function loadDocxWithFallback(){
-    const VERSION_BUSTER = 'v3'; // súbelo (v4, v5...) si quieres forzar recarga
-    const cdns = [
-      "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js",
-      "https://unpkg.com/docx@8.5.0/build/index.js",
-      "https://cdn.jsdelivr.net/npm/docx/build/index.js"
-    ];
-    function tryNext(i){
-      if(i>=cdns.length){ console.warn("DOCX no cargó en ningún CDN."); return; }
-      const s=document.createElement("script");
-      s.src = cdns[i] + (cdns[i].includes('?')?'&':'?') + VERSION_BUSTER;
-      s.defer = true;
-      s.crossOrigin = "anonymous";
-      s.referrerPolicy = "no-referrer";
-      s.onload = ()=>console.log("DOCX cargado desde:", cdns[i]);
-      s.onerror = ()=>{ console.warn("Falló DOCX en:", cdns[i], "→ probando siguiente"); tryNext(i+1); };
-      document.head.appendChild(s);
-    }
-    tryNext(0);
-  })();
-  </script>
 </head>
 
 <body>
@@ -86,12 +62,13 @@
 
   <footer class="wrap" style="padding:20px 16px 40px">
     <div class="muted" style="font-size:12px">
-      Funciona 100% offline (LocalStorage). Exporta CSV (Excel) y genera Word. Permite respaldo (.json).
+      Funciona 100% offline (LocalStorage). Exporta CSV (Excel) y permite respaldo (.json).
     </div>
   </footer>
 
   <script>
   (function(){
+    // ===== Utilidades y estado =====
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
     const DEST_TYPES=["Departamento","Jardín","Otro"];
     const LS={items:"inv_off_items_v1",moves:"inv_off_moves_v1",dests:"inv_off_dests_v1"};
@@ -100,7 +77,7 @@
     const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
     const todayISO=()=>{const d=new Date();d.setHours(0,0,0,0);return d.toISOString().slice(0,10)};
     const parseISO=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
-    const startOfWeek=date=>{const d=new Date(date);const g=d.getDay();const diff=(g===0?-6:1-g);d.setDate(d.getDate()+diff);d.setHours(0,0,0,0);return d};
+    const startOfWeek=date=>{const d=new Date(date);const g=d.getDay();const diff=g===0?-6:1-g;d.setDate(d.getDate()+diff);d.setHours(0,0,0,0);return d};
     const endOfWeek=date=>{const s=startOfWeek(date);const e=new Date(s);e.setDate(s.getDate()+6);e.setHours(23,59,59,999);return e};
     const within=(dateStr,aStr,bStr)=>{const t=parseISO(dateStr).getTime();const a=aStr?parseISO(aStr).getTime():-Infinity;const b=bStr?parseISO(bStr).getTime()+24*3600*1000-1:Infinity;return t>=a&&t<=b};
     const load=(k,fb)=>{try{const x=localStorage.getItem(k);return x?JSON.parse(x):fb}catch{return fb}};
@@ -416,7 +393,7 @@
       $("#main").innerHTML = tabsHtml[state.tab];
       $$(".tabs button").forEach(b=>{ b.classList.toggle("active", b.dataset.tab===state.tab); b.onclick = ()=> set({tab: b.dataset.tab}); });
 
-      // Inicio
+      // ===== Inicio
       if(state.tab==='inicio'){
         const r=$("#btnRecalc"); r && (r.onclick = ()=> set({}));
         $$("[data-edit-item]").forEach(btn=>{
@@ -424,7 +401,7 @@
         });
       }
 
-      // Inventario
+      // ===== Inventario
       if(state.tab==='inventario'){
         $("#buscar").oninput = e=> set({buscar: e.target.value});
         $("#catFiltro").onchange = e=> set({catFiltro: e.target.value});
@@ -455,7 +432,7 @@
         $$("[data-del-item]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar ítem? Se mantendrán los movimientos históricos.')) return; const id=btn.dataset.delItem; set({items: state.items.filter(it=>it.id!==id)}); });
       }
 
-      // Movimientos
+      // ===== Movimientos
       if(state.tab==='movimientos'){
         const syncLight=()=>{
           state.moveForm = {
@@ -481,12 +458,9 @@
         $("#toDate").onchange = e=> set({toDate:e.target.value});
         $("#btnExpMovs").onclick = exportMovimientos;
 
-        // Comprobante Word
+        // === Comprobante (Word) SIN librerías externas: genera .doc (HTML) ===
         $("#btnWord") && ($("#btnWord").onclick = async ()=>{
           try{
-            if(!window.docx){ alert('No se pudo cargar la librería DOCX. Intenta recargar (Ctrl+F5), usar incógnito u otro navegador/red.'); return; }
-            const { Document, Paragraph, Table, TableRow, TableCell, TextRun, AlignmentType, WidthType, Packer } = window.docx;
-
             const date = prompt('Fecha del comprobante (YYYY-MM-DD):', state.moveForm?.date || state.fromDate || '');
             if (!date) return;
             const dest = prompt('Destino/Establecimiento:', state.moveForm?.dest || '');
@@ -499,30 +473,59 @@
             const agg = new Map();
             for (const mv of movs) {
               const name = itemsMap[mv.itemId]?.name || '(Eliminado)';
-              const qty = Number(mv.qty||0);
+              const qty  = Number(mv.qty||0);
               agg.set(name, (agg.get(name)||0) + qty);
             }
-            const rows = Array.from(agg.entries()).map(([producto, cantidad]) => ({producto, cantidad}));
 
-            const title = new Paragraph({ children: [new TextRun({ text: 'ENTREGA DE MATERIALES ESTABLECIMIENTOS', bold: true })], alignment: AlignmentType.CENTER, spacing: { after: 200 } });
-            function line(l,v=''){ return new Paragraph({ children:[ new TextRun({text:l+' ',bold:true}), new TextRun({text: v || '_____________________'} )], spacing:{after:120} }); }
-            const pNombreFecha = new Paragraph({ children: [ new TextRun({ text: 'NOMBRE: ', bold: true }), new TextRun({ text: '____________________ ' }), new TextRun({ text: 'FECHA: ', bold: true }), new TextRun({ text: (date || '-') }) ], spacing: { after: 120 } });
-            const pEst = line('ESTABLECIMIENTO:', dest || '-');
+            const safe = (v)=> String(v||'').replace(/[&<>]/g, s=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[s]));
+            const rows = Array.from(agg.entries())
+              .map(([producto, cantidad]) => `<tr><td style="border:1px solid #000;padding:6px;text-align:center">${cantidad}</td><td style="border:1px solid #000;padding:6px">${safe(producto)}</td></tr>`)
+              .join('');
 
-            const headerRow = new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'CANTIDAD', bold: true })] })] }), new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'PRODUCTO', bold: true })] })] }) ] });
-            const itemRows = rows.map(r => new TableRow({ children: [ new TableCell({ children: [new Paragraph(String(r.cantidad))] }), new TableCell({ children: [new Paragraph(r.producto)] }) ] }));
-            const table = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...itemRows] });
+            const html = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Comprobante</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 12pt; }
+  h1   { text-align:center; font-size:16pt; }
+  table{ border-collapse:collapse; width:100%; margin-top:12px; }
+</style>
+</head>
+<body>
+  <h1>ENTREGA DE MATERIALES ESTABLECIMIENTOS</h1>
+  <p><b>NOMBRE:</b> ____________________ &nbsp;&nbsp;&nbsp; <b>FECHA:</b> ${safe(date)}</p>
+  <p><b>ESTABLECIMIENTO:</b> ${safe(dest||'-')}</p>
+  <table>
+    <thead>
+      <tr>
+        <th style="border:1px solid #000;padding:6px">CANTIDAD</th>
+        <th style="border:1px solid #000;padding:6px">PRODUCTO</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+  <p style="margin-top:24px"><b>El funcionario que suscribe, indica que se recepciona correctamente todos los productos individualizados.</b></p>
+  <p style="margin-top:48px">__________________________________________________<br><b>FIRMA RECEPCIÓN</b></p>
+</body>
+</html>`.trim();
 
-            const pAcepta = new Paragraph({ children: [new TextRun({ text: 'El funcionario que suscribe, indica que se recepciona correctamente todos los productos individualizados.', bold: true })], spacing: { before: 240, after: 240 } });
-            const pFirma  = new Paragraph({ children: [new TextRun('__________________________________________________')], spacing: { before: 240, after: 80 }, alignment: AlignmentType.LEFT });
-            const pFirmaLbl = new Paragraph({ children: [new TextRun({ text: 'FIRMA RECEPCIÓN', bold: true })] });
-
-            const doc = new Document({ sections: [ { properties: {}, children: [title, pNombreFecha, pEst, table, pAcepta, pFirma, pFirmaLbl] } ] });
-            const blob = await Packer.toBlob(doc);
+            const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
             const safeDest = (dest || 'Destino').replace(/[^A-Za-z0-9_\- ]/g, '_').slice(0,50).trim();
-            const fname = `Comprobante_${safeDest}_${date}.docx`;
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; a.click(); URL.revokeObjectURL(a.href);
-          } catch (e) { console.error(e); alert('No se pudo generar el comprobante: ' + e.message); }
+            const fname = `Comprobante_${safeDest}_${date}.doc`;
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fname;
+            a.click();
+            URL.revokeObjectURL(a.href);
+          } catch (e) {
+            console.error(e);
+            alert('No se pudo generar el comprobante: ' + e.message);
+          }
         });
 
         $("#btnSaveMove").onclick = ()=>{
@@ -540,7 +543,7 @@
         $$("[data-del-move]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar movimiento?')) return; const id=btn.dataset.delMove; set({moves: state.moves.filter(m=>m.id!==id)}); });
       }
 
-      // Reportes
+      // ===== Reportes
       if(state.tab==='reportes'){
         $("#fromDate").onchange = e=> set({fromDate:e.target.value});
         $("#toDate").onchange = e=> set({toDate:e.target.value});
@@ -548,7 +551,7 @@
         $("#btnExpRep").onclick = exportReporteSemanal;
       }
 
-      // Config
+      // ===== Config
       if(state.tab==='config'){
         $("#btnBackup").onclick = ()=>{
           const data={ items:state.items, moves:state.moves, dests:state.dests };
@@ -570,7 +573,7 @@
       }
     }
 
-    // Top buttons
+    // ===== Botones superiores
     $("#btnEjemplo").onclick = ()=>{
       if(!confirm('Esto agregará datos de ejemplo. ¿Continuar?')) return;
       const items=[
@@ -590,10 +593,10 @@
     };
     $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); } };
 
-    // Render inicial
+    // ===== Render inicial
     render();
 
-    // Restaurar desde enlace ?data=...
+    // ===== Restaurar desde enlace ?data=...
     function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
     function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
     (function restoreFromQuery(){

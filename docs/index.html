@@ -73,7 +73,7 @@
         <button data-tab="inicio">Inicio</button>
         <button data-tab="inventario">Inventario</button>
         <button class="active" data-tab="movimientos">Movimientos</button>
-        <button data-tab="reportes">Reportes</button>
+        <button data-tab="reportes">Informes</button>
         <button data-tab="config">Configuración</button>
       </div>
     </div>
@@ -232,11 +232,11 @@
         if(mv.type==="entrada") n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
         n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:"(Eliminado)",cantidad:mv.qty});
       }
-      const rows=[["Semana (Lun-Dom)","Destino","Entradas","Salidas","Detalle (artículo | fecha | tipo | cantidad)"]];
-      Array.from(map.values()).sort((a,b)=>a.s.localeCompare(b.s)||(a.dest||"").localeCompare((b.dest||""),"es",{sensitivity:'base'})).forEach(g=>{
-        const det=g.det.map(d=>`${d.articulo} | ${d.fecha} | ${d.tipo} | ${d.cantidad}`).join("; ");
-        rows.push([`${g.s} a ${g.e}`,g.dest,g.in,g.out,det]);
-      });
+      const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+      const rows=[["Semana (Lun-Dom)","Destino","Entradas","Salidas","Detalle"]];
+      for(const g of arr){
+        rows.push([`${g.s} a ${g.e}`, g.dest, g.in, g.out, g.det.map(d=>`${d.articulo} | ${d.fecha} | ${d.tipo} | ${d.cantidad}`).join('; ')]);
+      }
       downloadCSV(`reporte_semanal_${state.fromDate}_${state.toDate}`,rows);
     }
 
@@ -391,8 +391,16 @@
                 <div style="width:200px"><label>Desde</label><input id="fromDate" type="date" value="${state.fromDate}"/></div>
                 <div style="width:200px"><label>Hasta</label><input id="toDate" type="date" value="${state.toDate}"/></div>
                 <button class="btn" id="btnWeek">Semana actual</button>
-                <button class="btn ok" id="btnExpRep">Descargar Excel (CSV)</button>
               </div>
+
+              <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                <button class="btn" id="tabRepSem">Por semana</button>
+                <button class="btn pri" id="tabRepDest">Por Jardín/Destino</button>
+                <button class="btn ok" id="btnExpRep">Descargar CSV (por semana)</button>
+                <button class="btn ok" id="btnExpRepDest">Descargar CSV (por Destino)</button>
+              </div>
+
+              <div id="repContainer" style="overflow-x:auto"></div>
             </div>
           </section>
         `,
@@ -461,7 +469,6 @@ Arcoíris
 
       // ===== Inventario =====
       if(state.tab==='inventario'){
-        // Handlers sin re-render completo (buscador fluido)
         $("#buscar").oninput = (e)=>{ state.buscar = e.target.value; renderInventarioRows(); };
         $("#catFiltro").onchange = (e)=>{ state.catFiltro = e.target.value; renderInventarioRows(); };
 
@@ -488,7 +495,6 @@ Arcoíris
 
         $("#btnClearItem").onclick = ()=> set({itemForm:{id:null, code:'', name:'', category:'', unit:'Unidad', minStock:0, initialStock:0}});
 
-        // Botones quitar ítem / quitar todos
         $("#btnRemoveOne").onclick = ()=>{
           const sel = $("#selRemoveItem");
           const id = (sel && sel.value) || '';
@@ -504,14 +510,12 @@ Arcoíris
           set({ items: [] });
         };
 
-        // Pintado inicial y selector
         fillRemoveSelector();
         renderInventarioRows();
       }
 
       // ===== Movimientos =====
       if(state.tab==='movimientos'){
-        // Sincronizador ligero (para cambios de UI)
         const syncLight=()=>{
           state.moveForm = {
             id: state.moveForm.id,
@@ -538,7 +542,7 @@ Arcoíris
 
         $("#btnExpMovs").onclick = exportMovimientos;
 
-        // === Guardar (fix): guarda de verdad y muestra toast de éxito ===
+        // Guardar movimiento (con toast)
         const btnSaveMove = document.getElementById('btnSaveMove');
         if(btnSaveMove){
           btnSaveMove.onclick = ()=>{
@@ -616,9 +620,156 @@ Arcoíris
         });
       }
 
+      // ===== Reportes (Informes) =====
+      if(state.tab==='reportes'){
+        // Helpers locales
+        const itemsMap = Object.fromEntries(state.items.map(it=>[it.id,it]));
+        const movsInRange = () => state.moves.filter(m=>within(m.date, state.fromDate, state.toDate));
+
+        function buildTableSemanal(){
+          const movs = movsInRange();
+          const map = new Map();
+          for (const mv of movs){
+            const s = (startOfWeek(parseISO(mv.date))).toISOString().slice(0,10);
+            const e = (endOfWeek(parseISO(mv.date))).toISOString().slice(0,10);
+            const key = `${s}_${e}_${mv.dest||'-'}`;
+            const it = itemsMap[mv.itemId];
+            if(!map.has(key)) map.set(key,{s,e,dest:mv.dest||'-',in:0,out:0,det:[]});
+            const n = map.get(key);
+            if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
+            n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
+          }
+          const arr = Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+
+          if(arr.length===0){
+            return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
+          }
+          return `
+            <table>
+              <thead><tr><th>Semana (Lun-Dom)</th><th>Destino</th><th>Entradas</th><th>Salidas</th><th>Detalle</th></tr></thead>
+              <tbody>
+                ${arr.map(g=>`
+                  <tr>
+                    <td class="nowrap">${g.s} a ${g.e}</td>
+                    <td>${g.dest}</td>
+                    <td>${g.in}</td>
+                    <td>${g.out}</td>
+                    <td>
+                      <ul style="margin:0 0 0 18px">
+                        ${g.det.map(d=>`<li>${d.articulo} · ${d.fecha} · ${d.tipo} · ${d.cantidad}</li>`).join('')}
+                      </ul>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+
+        function buildTablePorDestino(){
+          const movs = movsInRange();
+          if(movs.length===0) return `<p class="muted" style="padding:16px">No hay movimientos en el rango seleccionado.</p>`;
+
+          const map = new Map(); // dest -> {in,out,det[]}
+          for(const mv of movs){
+            const dest = mv.dest && mv.dest.trim() ? mv.dest.trim() : '(Sin destino)';
+            if(!map.has(dest)) map.set(dest, {dest, in:0, out:0, det:[]});
+            const g = map.get(dest);
+            if(mv.type==='entrada') g.in += Number(mv.qty||0); else g.out += Number(mv.qty||0);
+            const it = itemsMap[mv.itemId];
+            g.det.push({
+              fecha: mv.date,
+              tipo: mv.type,
+              articulo: it?it.name:'(Eliminado)',
+              categoria: it?it.category:'',
+              cantidad: mv.qty
+            });
+          }
+
+          const arr = Array.from(map.values())
+            .sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+
+          let html = `
+            <table>
+              <thead>
+                <tr>
+                  <th>Jardín/Destino</th>
+                  <th>Entradas</th>
+                  <th>Salidas</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+          `;
+          for(const g of arr){
+            const detalle = g.det
+              .sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
+              .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`)
+              .join('; ');
+            html += `
+              <tr>
+                <td>${g.dest}</td>
+                <td>${g.in}</td>
+                <td>${g.out}</td>
+                <td>${detalle || '-'}</td>
+              </tr>
+            `;
+          }
+          html += `</tbody></table>`;
+          return html;
+        }
+
+        const repContainer = document.getElementById('repContainer');
+        const btnSem = document.getElementById('tabRepSem');
+        const btnDest = document.getElementById('tabRepDest');
+        function setActive(btn){ [btnSem,btnDest].forEach(b=>b && b.classList.remove('pri')); btn && btn.classList.add('pri'); }
+
+        // Render por destino por defecto
+        if(repContainer){ repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); }
+
+        // Rango
+        document.getElementById('fromDate').onchange = e=>{ state.fromDate=e.target.value; repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); };
+        document.getElementById('toDate').onchange   = e=>{ state.toDate=e.target.value; repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); };
+        document.getElementById('btnWeek').onclick   = ()=>{ state.fromDate=startOfWeek(new Date()).toISOString().slice(0,10); state.toDate=endOfWeek(new Date()).toISOString().slice(0,10); repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); };
+
+        // Sub-tabs
+        btnSem && (btnSem.onclick = ()=>{ repContainer.innerHTML = buildTableSemanal(); setActive(btnSem); });
+        btnDest && (btnDest.onclick = ()=>{ repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); });
+
+        // Exportar CSV (por semana)
+        document.getElementById('btnExpRep').onclick = ()=>{
+          exportReporteSemanal();
+          showToast('CSV semanal descargado', 'ok', 1600);
+        };
+
+        // Exportar CSV (por destino)
+        document.getElementById('btnExpRepDest').onclick = ()=>{
+          const movs = movsInRange();
+          const map = new Map();
+          for(const mv of movs){
+            const dest = mv.dest && mv.dest.trim() ? mv.dest.trim() : '(Sin destino)';
+            if(!map.has(dest)) map.set(dest,{dest,in:0,out:0,det:[]});
+            const g = map.get(dest);
+            if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
+            const it = itemsMap[mv.itemId];
+            g.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',categoria:it?it.category:'',cantidad:mv.qty});
+          }
+          const arr = Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+          const rows = [["Jardín/Destino","Entradas","Salidas","Detalle (fecha · tipo · artículo (categoría) · cantidad)"]];
+          for(const g of arr){
+            const detalle = g.det
+              .sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
+              .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`)
+              .join('; ');
+            rows.push([g.dest, g.in, g.out, detalle]);
+          }
+          downloadCSV(`reporte_por_destino_${state.fromDate}_a_${state.toDate}`, rows);
+          showToast('CSV por destino descargado', 'ok', 1600);
+        };
+      }
+
       // ===== Config =====
       if(state.tab==='config'){
-        // Poner todos los ítems (semilla)
         const btnCfgSeedAll = $("#btnCfgSeedAll");
         btnCfgSeedAll && (btnCfgSeedAll.onclick = ()=>{
           const hasItems = state.items && state.items.length>0;
@@ -626,11 +777,11 @@ Arcoíris
           applySeed(); render(); showToast('Ítems base cargados', 'ok', 1800);
         });
 
-        // Respaldo clásico
         $("#btnBackup").onclick = ()=>{
           const data={ items:state.items, moves:state.moves, dests:state.dests };
           const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
           const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download = `respaldo_inventario_${todayISO()}.json`; a.click(); URL.revokeObjectURL(a.href);
+          showToast('Respaldo descargado', 'ok', 1500);
         };
         $("#fileRestore").onchange = e=>{
           const f=e.target.files?.[0]; if(!f) return;
@@ -645,7 +796,6 @@ Arcoíris
           reader.readAsText(f);
         };
 
-        // Transferencia PC→Celular por archivo
         const btnMakeTransferFile = $("#btnMakeTransferFile");
         const fileTransferImport   = $("#fileTransferImport");
 
@@ -697,7 +847,6 @@ Arcoíris
           reader.readAsText(f);
         });
 
-        // Lista OFICIAL de Jardines/Destinos
         const txtOfficial = $("#txtOfficialDests");
         const btnLoadCur  = $("#btnOfficialLoadFromCurrent");
         const btnSaveOff  = $("#btnOfficialSave");
@@ -743,7 +892,7 @@ Arcoíris
       }
     }
 
-    // ===== Funciones auxiliares para Inventario (pintado parcial) =====
+    // ===== Inventario (pintado parcial) =====
     function fillRemoveSelector(){
       const sel = document.getElementById('selRemoveItem');
       if(!sel) return;
@@ -858,4 +1007,4 @@ Arcoíris
   })();
   </script>
 </body>
-</html>
+</html>v

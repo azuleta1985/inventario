@@ -6,12 +6,13 @@
   <title>Bodega Regional · Inventario (Online)</title>
 
   <style>
-    :root{--bg:#f6f7fb;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;--pri:#2563eb;--ok:#059669;--bad:#b91c1c}
+    :root{--bg:#f6f7fb;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;--pri:#2563eb;--ok:#059669;--bad:#b91c1c;--warn:#b45309}
     *{box-sizing:border-box}
     html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,"Noto Sans",sans-serif}
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
     .top{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
     h1{font-size:20px;margin:0}
+    h3{margin:6px 0}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .tabs button{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
     .tabs .active{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -33,7 +34,11 @@
     .right{text-align:right}
     .muted{color:var(--muted)}
     .danger{color:var(--bad);font-weight:600}
+    .warn{color:var(--warn);font-weight:600}
     .nowrap{white-space:nowrap}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}
+    .badge.low{background:#fee2e2;color:#991b1b}
+    .badge.high{background:#dcfce7;color:#166534}
     @media (max-width:900px){.g-3{grid-template-columns:1fr}.g-2{grid-template-columns:1fr}}
 
     /* ===== Aviso flotante (toast) ===== */
@@ -42,7 +47,7 @@
       left: 50%;
       bottom: 24px;
       transform: translateX(-50%);
-      background: #065f46;
+      background: #065f46; /* verde éxito */
       color: #fff;
       padding: 10px 14px;
       border-radius: 10px;
@@ -54,7 +59,7 @@
       transition: opacity .25s ease, transform .25s ease;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-    .toast.error { background: #b91c1c; }
+    .toast.error { background: #b91c1c; } /* rojo error */
   </style>
 </head>
 
@@ -70,9 +75,9 @@
         </div>
       </div>
       <div class="tabs row" style="padding:0 0 10px 0">
-        <button data-tab="inicio">Inicio</button>
+        <button class="active" data-tab="inicio">Inicio</button>
         <button data-tab="inventario">Inventario</button>
-        <button class="active" data-tab="movimientos">Movimientos</button>
+        <button data-tab="movimientos">Movimientos</button>
         <button data-tab="reportes">Informes</button>
         <button data-tab="config">Configuración</button>
       </div>
@@ -107,7 +112,7 @@
     const unique=(arr)=>Array.from(new Set(arr));
     const safeFile=(s)=>String(s||'').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80);
 
-    // Toast
+    // Toast reutilizable
     function showToast(msg, type='ok', ms=2200){
       const el = document.getElementById('toast');
       if(!el) return;
@@ -128,6 +133,7 @@
       };
       const body   = rows.map(r => r.map(c => esc(c)).join(delimiter)).join("\r\n");
       const text   = `sep=${delimiter}\r\n` + body + "\r\n";
+      // UTF‑16 LE buffer (+1 para BOM)
       const buf = new Uint16Array(text.length + 1);
       buf[0] = 0xFEFF; // BOM
       for (let i = 0; i < text.length; i++) buf[i+1] = text.charCodeAt(i);
@@ -149,7 +155,7 @@
     };
 
     let state={
-      tab:"movimientos",
+      tab:"inicio",
       items:load(LS.items,[]),
       moves:load(LS.moves,[]),
       dests:load(LS.dests,[]),
@@ -163,11 +169,11 @@
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // Lista OFICIAL de Jardines/Destinos
+    // Lista oficial de Jardines/Destinos
     function getOfficialDests(){ return load(LS.officialDests, []); }
     function setOfficialDests(list){ save(LS.officialDests, Array.from(new Set((list||[]).map(s=>String(s).trim()).filter(Boolean)))); }
 
-    // Semillas
+    // Semillas de ítems base
     function seedItems(){
       return [
         { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
@@ -178,6 +184,8 @@
         { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
       ];
     }
+
+    // Aplica ítems base y destinos (si hay OFICIAL, usa OFICIAL)
     function applySeed(){
       const official = getOfficialDests();
       state.items = seedItems();
@@ -186,38 +194,36 @@
         : unique([...(state.dests||[]), 'Bambi','Sol del Valle']);
       persist();
     }
+
+    // Semilla automática / forzar por URL
     (function seedOnLoad(){
       try{
         const force = (qs('seed') === '1');
         const isEmpty = !state.items || state.items.length===0;
-        if (isEmpty || force){ if (isEmpty){ applySeed(); } }
+        if (isEmpty || force){
+          if (isEmpty){ applySeed(); }
+        }
       }catch(e){}
     })();
 
-    // ===== Calcular/Exportar =====
+    // ===== Utilidades cálculo/exports =====
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
 
-    function exportInventario(){
-      const sb=stockByItem();
+    function exportInventario(){ const sb=stockByItem();
       const rows=[["Código","Artículo","Categoría","Unidad","Stock mínimo","Existencias"]];
       for(const it of state.items) rows.push([it.code||"",it.name,it.category,it.unit||"Unidad",Number(it.minStock||0),Number(sb[it.id]||0)]);
       downloadCSV(`inventario_${todayISO()}`,rows);
     }
 
-    function exportMovimientos(){
-      const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
+    function exportMovimientos(){ const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
       const movs=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
-      for(const mv of movs){
-        const it=itemsMap[mv.itemId];
-        rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest||"",mv.destType||"",mv.notes||""]);
-      }
+      for(const mv of movs){ const it=itemsMap[mv.itemId]; rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest||"",mv.destType||"",mv.notes||""]); }
       downloadCSV(`movimientos_${state.fromDate}_a_${state.toDate}`,rows);
     }
 
-    function exportReporteSemanal(){
-      const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
+    function exportReporteSemanal(){ const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
       const movs=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
       const map=new Map();
       for(const mv of movs){
@@ -241,18 +247,118 @@
     // ===== UI =====
     function render(){
       const main=$("#main");
+      const sb=stockByItem();
+
+      // Umbrales para Inicio
+      const LOW_THR = 15;
+      const HIGH_THR = 50;
+
+      const lowItems = state.items
+        .filter(it => (sb[it.id]||0) <= LOW_THR)
+        .sort((a,b)=> (sb[a.id]-sb[b.id]) || a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
+
+      const highItems = state.items
+        .filter(it => (sb[it.id]||0) >= HIGH_THR)
+        .sort((a,b)=> (sb[b.id]-sb[a.id]) || a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
+
       const tabsHtml={
         inicio: `
           <section class="grid g-3">
-            <div class="card kpi"><div class="muted">Ítems</div><div class="n">${state.items.length}</div></div>
-            <div class="card kpi"><div class="muted">Movimientos</div><div class="n">${state.moves.length}</div></div>
-            <div class="card kpi"><div class="muted">Destinos</div><div class="n">${state.dests.length}</div></div>
+            <div class="card kpi">
+              <div class="muted">Ítems</div>
+              <div class="n">${state.items.length}</div>
+            </div>
+            <div class="card kpi">
+              <div class="muted">Movimientos</div>
+              <div class="n">${state.moves.length}</div>
+            </div>
+            <div class="card kpi">
+              <div class="muted">Destinos</div>
+              <div class="n">${state.dests.length}</div>
+            </div>
+          </section>
+
+          <section class="card" style="margin-top:12px">
+            <div class="row" style="justify-content:space-between;align-items:baseline">
+              <h3>Informe de stock</h3>
+              <div class="muted" style="font-size:13px">
+                Umbrales: <span class="badge low">Bajo ≤ ${LOW_THR}</span>
+                &nbsp;|&nbsp;
+                <span class="badge high">Alto ≥ ${HIGH_THR}</span>
+              </div>
+            </div>
+
+            <div class="grid g-2" style="margin-top:6px">
+              <div>
+                <div class="row" style="justify-content:space-between;align-items:center">
+                  <h4 style="margin:6px 0">Bajo stock <span class="badge low">${lowItems.length}</span></h4>
+                  <button class="btn ok" id="btnExpLowStock">Descargar CSV (bajo)</button>
+                </div>
+                <div style="overflow-x:auto">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${
+                        lowItems.length===0
+                        ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin productos en bajo stock (≤ ${LOW_THR})</td></tr>`
+                        : lowItems.map(it=>`
+                          <tr>
+                            <td>${it.code||''}</td>
+                            <td>${it.name}</td>
+                            <td>${it.category}</td>
+                            <td>${it.unit||'Unidad'}</td>
+                            <td>${Number(it.minStock||0)}</td>
+                            <td class="warn">${Number(sb[it.id]||0)}</td>
+                          </tr>
+                        `).join('')
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <div class="row" style="justify-content:space-between;align-items:center">
+                  <h4 style="margin:6px 0">Alto stock <span class="badge high">${highItems.length}</span></h4>
+                  <button class="btn ok" id="btnExpHighStock">Descargar CSV (alto)</button>
+                </div>
+                <div style="overflow-x:auto">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${
+                        highItems.length===0
+                        ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin productos en alto stock (≥ ${HIGH_THR})</td></tr>`
+                        : highItems.map(it=>`
+                          <tr>
+                            <td>${it.code||''}</td>
+                            <td>${it.name}</td>
+                            <td>${it.category}</td>
+                            <td>${it.unit||'Unidad'}</td>
+                            <td>${Number(it.minStock||0)}</td>
+                            <td class="danger">${Number(sb[it.id]||0)}</td>
+                          </tr>
+                        `).join('')
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </section>
         `,
         inventario: `
           <section class="grid g-2">
             <div class="card">
-              <h3 style="margin:6px 0">Nuevo/editar ítem</h3>
+              <h3>Nuevo/editar ítem</h3>
               <div>
                 <label>Código</label>
                 <input id="it_code" value="${state.itemForm.code}" placeholder="SKU o interno"/>
@@ -311,7 +417,7 @@
         movimientos: `
           <section class="grid g-2">
             <div class="card">
-              <h3 style="margin:6px 0">Registrar movimiento</h3>
+              <h3>Registrar movimiento</h3>
               <label>Fecha *</label>
               <input id="mv_date" type="date" value="${state.moveForm.date}"/>
               <label>Tipo *</label>
@@ -382,7 +488,7 @@
         reportes: `
           <section class="grid">
             <div class="card">
-              <h3 style="margin:6px 0">Rango de fechas</h3>
+              <h3>Rango de fechas</h3>
               <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap">
                 <div style="width:200px"><label>Desde</label><input id="fromDate" type="date" value="${state.fromDate}"/></div>
                 <div style="width:200px"><label>Hasta</label><input id="toDate" type="date" value="${state.toDate}"/></div>
@@ -396,7 +502,6 @@
                 <button class="btn ok" id="btnExpRepDest">Descargar CSV (por Destino)</button>
                 <button class="btn ok" id="btnExpSimple">Descargar CSV (Jardín, Fecha, Producto, Cantidad)</button>
                 <button class="btn ok" id="btnExpPerGarden">Descargar por Jardín (archivos separados)</button>
-                <!-- NUEVO -->
                 <button class="btn ok" id="btnExpPerDept">Descargar por Departamento (archivos separados)</button>
               </div>
 
@@ -408,7 +513,7 @@
           <section class="grid g-2">
 
             <div class="card">
-              <h3 style="margin:6px 0">Acciones rápidas</h3>
+              <h3>Acciones rápidas</h3>
               <div class="row" style="gap:8px;flex-wrap:wrap">
                 <button class="btn pri" id="btnCfgSeedAll">Poner todos los ítems (semilla)</button>
                 <button class="btn" id="btnBackup">Descargar respaldo (.json)</button>
@@ -422,7 +527,7 @@
             </div>
 
             <div class="card">
-              <h3 style="margin:6px 0">Transferencia PC → Celular (archivo)</h3>
+              <h3>Transferencia PC → Celular (archivo)</h3>
               <div class="row" style="gap:8px;flex-wrap:wrap">
                 <button class="btn ok" id="btnMakeTransferFile">Crear archivo de transferencia (.json)</button>
                 <label class="btn" style="cursor:pointer">Importar transferencia (.json)
@@ -436,7 +541,7 @@
             </div>
 
             <div class="card" style="grid-column:1/-1">
-              <h3 style="margin:6px 0">Lista oficial de Jardines/Destinos</h3>
+              <h3>Lista oficial de Jardines/Destinos</h3>
               <p class="muted" style="margin:6px 0">
                 Pega tu lista oficial (uno por línea). Guárdala como OFICIAL y aplícala en este u otros dispositivos.
               </p>
@@ -451,13 +556,10 @@ Arcoíris
                 <button class="btn pri" id="btnOfficialApply">Aplicar OFICIAL en este dispositivo</button>
                 <button class="btn" id="btnOfficialExportJSON">Descargar OFICIAL (.json)</button>
               </div>
-              <p class="muted" style="margin-top:6px">
-                Consejo: guarda la OFICIAL aquí, aplícala y luego usa “Crear archivo de transferencia” para clonarla en el celular.
-              </p>
             </div>
 
             <div class="card">
-              <h3 style="margin:6px 0">Categorías sugeridas</h3>
+              <h3>Categorías sugeridas</h3>
               <ul style="margin:6px 0 0 18px">${CATS.map(c=>`<li>${c}</li>`).join('')}</ul>
             </div>
           </section>
@@ -466,6 +568,31 @@ Arcoíris
 
       $("#main").innerHTML = tabsHtml[state.tab];
       $$(".tabs button").forEach(b=>{ b.classList.toggle("active", b.dataset.tab===state.tab); b.onclick = ()=> set({tab: b.dataset.tab}); });
+
+      // ===== INICIO: handlers export CSV (bajo/alto stock) =====
+      if(state.tab==='inicio'){
+        const LOW_THR = 15, HIGH_THR = 50;
+        const sb = stockByItem();
+        const lowItems = state.items.filter(it => (sb[it.id]||0) <= LOW_THR);
+        const highItems = state.items.filter(it => (sb[it.id]||0) >= HIGH_THR);
+
+        const toRows = (arr)=> {
+          const rows=[["Código","Artículo","Categoría","Unidad","Mínimo","Existencias"]];
+          arr.forEach(it=> rows.push([
+            it.code||"",
+            it.name,
+            it.category,
+            it.unit||"Unidad",
+            Number(it.minStock||0),
+            Number(sb[it.id]||0)
+          ]));
+          return rows;
+        };
+
+        const btnLow=$("#btnExpLowStock"), btnHigh=$("#btnExpHighStock");
+        btnLow && (btnLow.onclick = ()=> downloadCSV(`bajo_stock_<=${LOW_THR}_${todayISO()}`, toRows(lowItems)));
+        btnHigh && (btnHigh.onclick = ()=> downloadCSV(`alto_stock_>=${HIGH_THR}_${todayISO()}`, toRows(highItems)));
+      }
 
       // ===== Inventario =====
       if(state.tab==='inventario'){
@@ -601,7 +728,7 @@ Arcoíris
           };
         }
 
-        // Editar/Eliminar por fila
+        // Edición / Eliminación por fila
         document.querySelectorAll("[data-edit-move]").forEach(btn=>{
           btn.onclick = ()=>{
             const mv = state.moves.find(x=>x.id===btn.dataset.editMove);
@@ -777,7 +904,7 @@ Arcoíris
           showToast(`Descargados ${byDest.size} archivo(s) por Jardín`, 'ok', 2000);
         }
 
-        // === NUEVO: Por Departamento — un archivo por Departamento (solo SALIDAS)
+        // === Por Departamento — un archivo por Departamento (solo SALIDAS)
         function exportPerDepartment(){
           const base = state.moves.filter(m =>
             m.type==='salida' &&
@@ -787,8 +914,7 @@ Arcoíris
           );
           if(base.length===0){ alert('No hay ENTREGAS (salidas) a Departamentos en el rango.'); return; }
 
-          // Agrupar por Departamento
-          const byDept = new Map(); // dept -> [movs]
+          const byDept = new Map();
           for(const mv of base){
             const d = (mv.dest||'').trim();
             if(!byDept.has(d)) byDept.set(d, []);
@@ -806,9 +932,9 @@ Arcoíris
             });
 
             const rows = [];
-            rows.push(["Departamento", dept]);   // Título con el nombre del departamento
-            rows.push([""]);                     // Línea en blanco
-            rows.push(["Fecha","Producto","Cantidad","Tipo","Notas"]); // Cabecera
+            rows.push(["Departamento", dept]);
+            rows.push([""]);
+            rows.push(["Fecha","Producto","Cantidad","Tipo","Notas"]);
 
             for(const mv of arr){
               rows.push([
@@ -879,7 +1005,6 @@ Arcoíris
         const btnExpPerGarden = document.getElementById('btnExpPerGarden');
         btnExpPerGarden && (btnExpPerGarden.onclick = exportPerGarden);
 
-        // Nuevo botón: por Departamento
         const btnExpPerDept = document.getElementById('btnExpPerDept');
         btnExpPerDept && (btnExpPerDept.onclick = exportPerDepartment);
       }
@@ -912,7 +1037,7 @@ Arcoíris
           reader.readAsText(f);
         };
 
-        // Transferencia PC→Celular (corregido)
+        // Transferencia PC→Celular
         const btnMakeTransferFile = $("#btnMakeTransferFile");
         const fileTransferImport   = $("#fileTransferImport");
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Bodega Regional · Inventario (Online, sin OneDrive)</title>
+  <title>Bodega Regional · Inventario (Online)</title>
 
   <style>
     :root{--bg:#f6f7fb;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;--pri:#2563eb;--ok:#059669;--bad:#b91c1c}
@@ -92,6 +92,29 @@
 
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
+
+    // ===== Semilla automática (primer ingreso en cualquier dispositivo) =====
+    (function seedOnFirstLoad(){
+      try{
+        const noItems = !state.items || state.items.length === 0;
+        const noMoves = !state.moves || state.moves.length === 0;
+        if (noItems && noMoves) {
+          const seedItems = [
+            { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
+            { id: uid(), code:'IMP-085A',    name:'Tóner 85 A',   category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
+            { id: uid(), code:'EQP-TOL-001', name:'Toldo Completo', category:'Equipamiento',       unit:'Unidad',  minStock:0, initialStock:0 },
+            { id: uid(), code:'ASE-BAS-5055',name:'Bolsa Basura 50x55x10 Unidades Paquete', category:'Artículos de aseo', unit:'Paquete', minStock:0, initialStock:0 },
+            { id: uid(), code:'ASE-DET-800', name:'Detergente en Polvo 800 Grs',           category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 },
+            { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
+          ];
+          const seedDests = ['Bambi','Sol del Valle'];
+          state.items = seedItems;
+          state.dests = Array.from(new Set([...(state.dests||[]), ...seedDests]));
+          persist();
+          console.log('Semilla aplicada en este dispositivo');
+        }
+      } catch(e){ console.warn('Semilla: error opcional', e); }
+    })();
 
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
@@ -207,6 +230,7 @@
                 </div>
               </div>
             </div>
+
             <div class="card">
               <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px">
                 <div style="flex:1">
@@ -219,6 +243,18 @@
                 </div>
                 <button class="btn ok" id="btnExpInv">Descargar Excel (CSV)</button>
               </div>
+
+              <!-- Controles de eliminación rápida -->
+              <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0">
+                <select id="selRemoveItem" style="min-width:260px">
+                  <option value="">-- Seleccione ítem a quitar --</option>
+                  ${state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
+                      .map(it=>`<option value="${it.id}">${it.name} · ${it.category}</option>`).join('')}
+                </select>
+                <button class="btn bad" id="btnRemoveOne">Quitar ítem</button>
+                <button class="btn bad" id="btnRemoveAllItems">Quitar todos los ítems</button>
+              </div>
+
               <div style="overflow-x:auto">
                 <table>
                   <thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th><th class='right'>Acciones</th></tr></thead>
@@ -231,6 +267,7 @@
                         return (it.name.toLowerCase().includes(q) || (it.code||'').toLowerCase().includes(q) || (it.unit||'').toLowerCase().includes(q));
                       });
                       if(list.length===0) return `<tr><td colspan='7' class='muted' style='text-align:center;padding:16px'>Sin resultados</td></tr>`;
+                      const sb2 = stockByItem();
                       return list.map(it=>`
                         <tr>
                           <td>${it.code||''}</td>
@@ -238,7 +275,7 @@
                           <td>${it.category}</td>
                           <td>${it.unit||''}</td>
                           <td>${it.minStock||0}</td>
-                          <td class='${((sb[it.id]||0) <= Number(it.minStock||0)) ? 'danger' : ''}'>${sb[it.id]||0}</td>
+                          <td class='${((sb2[it.id]||0) <= Number(it.minStock||0)) ? 'danger' : ''}'>${sb2[it.id]||0}</td>
                           <td class='right'>
                             <button class='btn' data-edit-item='${it.id}'>Editar</button>
                             <button class='btn bad' data-del-item='${it.id}'>Eliminar</button>
@@ -368,7 +405,7 @@
             <div class="card">
               <h3 style="margin:6px 0">Categorías sugeridas</h3>
               <ul style="margin:6px 0 0 18px">${CATS.map(c=>`<li>${c}</li>`).join('')}</ul>
-              <p class="muted" style="margin-top:6px">¿Necesitas categorías personalizadas? Dímelo y las agrego.</p>
+              <p class="muted" style="margin-top:6px">También puedes exportar Inventario, Movimientos y el Reporte semanal como Excel (CSV) desde sus secciones.</p>
             </div>
             <div class="card">
               <h3 style="margin:6px 0">Respaldo</h3>
@@ -376,15 +413,7 @@
                 <button class="btn" id="btnBackup">Descargar respaldo (.json)</button>
                 <label class="btn" style="cursor:pointer">Cargar respaldo<input id="fileRestore" type="file" accept="application/json" style="display:none"/></label>
               </div>
-              <p class="muted" style="margin-top:6px">También puedes exportar Inventario, Movimientos y el Reporte semanal como Excel (CSV) desde sus secciones.</p>
-            </div>
-            <div class="card" style="grid-column:1/-1;background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a">
-              <b>Consejos de uso</b>
-              <ul style="margin:6px 0 0 18px">
-                <li>Para entregar a Departamentos o Jardines usa un movimiento de <b>salida</b> indicando el destino.</li>
-                <li>Las <b>existencias</b> se calculan con el stock inicial + entradas − salidas.</li>
-                <li>El botón <b>Descargar Excel (CSV)</b> genera un archivo compatible con Excel.</li>
-              </ul>
+              <p class="muted" style="margin-top:6px">Tus datos se guardan automáticamente en este navegador (LocalStorage).</p>
             </div>
           </section>
         `
@@ -428,8 +457,28 @@
 
         $("#btnClearItem").onclick = ()=> set({itemForm:{id:null, code:'', name:'', category:'', unit:'Unidad', minStock:0, initialStock:0}});
 
+        // Eliminar por fila (ya existía)
         $$("[data-edit-item]").forEach(btn=> btn.onclick=()=>{ const it=state.items.find(x=>x.id===btn.dataset.editItem); if(!it) return; set({itemForm:{...it}}); });
         $$("[data-del-item]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar ítem? Se mantendrán los movimientos históricos.')) return; const id=btn.dataset.delItem; set({items: state.items.filter(it=>it.id!==id)}); });
+
+        // === NUEVO: Quitar ítem desde selector + Quitar todos los ítems ===
+        const selRemove = $("#selRemoveItem");
+        const btnRemoveOne = $("#btnRemoveOne");
+        btnRemoveOne && (btnRemoveOne.onclick = ()=>{
+          const id = (selRemove && selRemove.value) || '';
+          if(!id) return alert('Selecciona un ítem a quitar');
+          const it = state.items.find(x=>x.id===id);
+          if(!it) return alert('Ítem no encontrado');
+          if(!confirm(`¿Quitar el ítem "${it.name}"?`)) return;
+          set({ items: state.items.filter(x=>x.id!==id) });
+        });
+
+        const btnRemoveAllItems = $("#btnRemoveAllItems");
+        btnRemoveAllItems && (btnRemoveAllItems.onclick = ()=>{
+          if(!state.items.length) return alert('No hay ítems para quitar');
+          if(!confirm('Esto quitará TODOS los ítems. Los movimientos quedarán y mostrarán "(Eliminado)". ¿Continuar?')) return;
+          set({ items: [] });
+        });
       }
 
       // ===== Movimientos
@@ -458,7 +507,7 @@
         $("#toDate").onchange = e=> set({toDate:e.target.value});
         $("#btnExpMovs").onclick = exportMovimientos;
 
-        // === Comprobante (Word) SIN librerías externas: genera .doc (HTML) ===
+        // Comprobante (Word) SIN librerías externas: genera .doc (HTML)
         $("#btnWord") && ($("#btnWord").onclick = async ()=>{
           try{
             const date = prompt('Fecha del comprobante (YYYY-MM-DD):', state.moveForm?.date || state.fromDate || '');

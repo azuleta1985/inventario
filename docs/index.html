@@ -42,7 +42,7 @@
       left: 50%;
       bottom: 24px;
       transform: translateX(-50%);
-      background: #065f46; /* verde éxito */
+      background: #065f46;
       color: #fff;
       padding: 10px 14px;
       border-radius: 10px;
@@ -54,7 +54,7 @@
       transition: opacity .25s ease, transform .25s ease;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-    .toast.error { background: #b91c1c; } /* rojo error */
+    .toast.error { background: #b91c1c; }
   </style>
 </head>
 
@@ -118,27 +118,26 @@
       showToast.__t = setTimeout(()=> el.classList.remove('show'), ms);
     }
 
-    // ===== CSV: forzar columnas en Excel (sep=;) =====
+    // ===== CSV Excel-friendly: UTF-16 LE + BOM + sep=; =====
     function downloadCSV(filename, rows, delimiter = ';'){
       const esc = (s) => {
         if (s == null) return "";
         const t = String(s).replace(/"/g, '""');
-        // si hay ;, comillas, saltos o espacios extremos, encapsular
         return /["\r\n;]|^\s|\s$/.test(t) ? `"${t}"` : t;
       };
-      const body = rows.map(r => r.map(c => esc(c)).join(delimiter)).join("\r\n");
-      const content = `sep=${delimiter}\r\n` + body + "\r\n";
-      const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+      const body   = rows.map(r => r.map(c => esc(c)).join(delimiter)).join("\r\n");
+      const text   = `sep=${delimiter}\r\n` + body + "\r\n";
+      // UTF‑16 LE buffer (+1 para BOM)
+      const buf = new Uint16Array(text.length + 1);
+      buf[0] = 0xFEFF; // BOM
+      for (let i = 0; i < text.length; i++) buf[i+1] = text.charCodeAt(i);
+      const blob = new Blob([buf], { type: "text/csv;charset=utf-16le" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = filename.endsWith(".csv") ? filename : filename + ".csv";
       a.click();
       URL.revokeObjectURL(a.href);
     }
-
-    // Backup encoder/decoder (por si algún día usas link con data)
-    function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
-    function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
 
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
     const DEST_TYPES=["Departamento","Jardín","Otro"];
@@ -184,11 +183,9 @@
     function applySeed(){
       const official = getOfficialDests();
       state.items = seedItems();
-      if(official.length>0){
-        state.dests = unique([...(state.dests||[]), ...official]);
-      }else{
-        state.dests = unique([...(state.dests||[]), 'Bambi','Sol del Valle']);
-      }
+      state.dests = official.length>0
+        ? unique([...(state.dests||[]), ...official])
+        : unique([...(state.dests||[]), 'Bambi','Sol del Valle']);
       persist();
     }
 
@@ -667,7 +664,7 @@ Arcoíris
           const movs = movsInRange();
           if(movs.length===0) return `<p class="muted" style="padding:16px">No hay movimientos en el rango seleccionado.</p>`;
 
-          const map = new Map(); // dest -> {in,out,det[]}
+          const map = new Map();
           for(const mv of movs){
             const dest = mv.dest && mv.dest.trim() ? mv.dest.trim() : '(Sin destino)';
             if(!map.has(dest)) map.set(dest, {dest, in:0, out:0, det:[]});
@@ -683,8 +680,7 @@ Arcoíris
             });
           }
 
-          const arr = Array.from(map.values())
-            .sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+          const arr = Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
 
           let html = `
             <table>
@@ -734,6 +730,7 @@ Arcoíris
 
         document.getElementById('btnExpRepDest').onclick = ()=>{
           const movs = movsInRange();
+          const itemsMap = Object.fromEntries(state.items.map(it=>[it.id,it]));
           const map = new Map();
           for(const mv of movs){
             const dest = mv.dest && mv.dest.trim() ? mv.dest.trim() : '(Sin destino)';

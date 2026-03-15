@@ -113,6 +113,12 @@
     const unique=(arr)=>Array.from(new Set(arr));
     const safeFile=(s)=>String(s||'').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80);
 
+    // ===== Comparador de tipo de destino (para filtro) =====
+    function matchDestType(m, filter){
+      if(!filter) return true;               // '' = Todos
+      return (m.destType||'').trim() === filter;
+    }
+
     // Toast reutilizable
     function showToast(msg, type='ok', ms=2200){
       const el = document.getElementById('toast');
@@ -147,7 +153,7 @@
     }
 
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
-    const DEST_TYPES=["Departamento","Jardín","Bodega Peñuelas","Otro"]; // ← incluye Bodega Peñuelas
+    const DEST_TYPES=["Departamento","Jardín","Bodega Peñuelas","Otro"]; // incluye Bodega Peñuelas
 
     const LS={
       items:"inv_off_items_v1",
@@ -165,7 +171,9 @@
       itemForm:{id:null,code:"",name:"",category:"",unit:"Unidad",minStock:0,initialStock:0},
       moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""},
       fromDate:startOfWeek(new Date()).toISOString().slice(0,10),
-      toDate:endOfWeek(new Date()).toISOString().slice(0,10)
+      toDate:endOfWeek(new Date()).toISOString().slice(0,10),
+      // NUEVO: filtro de tipo de destino en Movimientos
+      moveDestTypeFilter:""  // ''=Todos | 'Jardín' | 'Departamento' | 'Bodega Peñuelas'
     };
 
     function set(p){ state={...state,...p}; render(); persist(); }
@@ -212,20 +220,33 @@
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
 
-    function exportInventario(){ const sb=stockByItem();
-      const rows=[["Código","Artículo","Categoría","Unidad","Stock mínimo","Existencias"]];
-      for(const it of state.items) rows.push([it.code||"",it.name,it.category,it.unit||"Unidad",Number(it.minStock||0),Number(sb[it.id]||0)]);
-      downloadCSV(`inventario_${todayISO()}`,rows);
-    }
-
-    function exportMovimientos(){ const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
+    // ⚠️ Ajustada para respetar el filtro de tipo de destino cuando se le pasa
+    function exportMovimientos(destTypeFilter = ''){
+      const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
-      const movs=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
-      for(const mv of movs){ const it=itemsMap[mv.itemId]; rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest||"",mv.destType||"",mv.notes||""]); }
-      downloadCSV(`movimientos_${state.fromDate}_a_${state.toDate}`,rows);
+      const movs=state.moves
+        .filter(m=>within(m.date,state.fromDate,state.toDate))
+        .filter(m=>matchDestType(m, destTypeFilter));
+
+      for(const mv of movs){
+        const it=itemsMap[mv.itemId];
+        rows.push([
+          mv.date,
+          mv.type,
+          it?it.name:"(Eliminado)",
+          it?it.category:"",
+          mv.qty,
+          mv.dest||"",
+          mv.destType||"",
+          mv.notes||""
+        ]);
+      }
+      const suffix = destTypeFilter ? `_tipo_${destTypeFilter.replace(/\s+/g,'_')}` : '';
+      downloadCSV(`movimientos${suffix}_${state.fromDate}_a_${state.toDate}`,rows);
     }
 
-    function exportReporteSemanal(){ const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
+    function exportReporteSemanal(){
+      const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
       const movs=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
       const map=new Map();
       for(const mv of movs){
@@ -337,7 +358,7 @@
                             <td>${it.category}</td>
                             <td>${it.unit||'Unidad'}</td>
                             <td>${Number(it.minStock||0)}</td>
-                            <!-- CAMBIO AQUÍ: antes era class="danger", ahora en VERDE con class="ok" -->
+                            <!-- Alto stock en VERDE -->
                             <td class="ok">${Number(sb[it.id]||0)}</td>
                           </tr>
                         `).join('')
@@ -443,19 +464,44 @@
             </div>
             <div class="card">
               <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px">
-                <div style="width:200px"><label>Desde</label><input id="fromDate" type="date" value="${state.fromDate}"/></div>
-                <div style="width:200px"><label>Hasta</label><input id="toDate" type="date" value="${state.toDate}"/></div>
+                <div style="width:200px">
+                  <label>Desde</label>
+                  <input id="fromDate" type="date" value="${state.fromDate}"/>
+                </div>
+                <div style="width:200px">
+                  <label>Hasta</label>
+                  <input id="toDate" type="date" value="${state.toDate}"/>
+                </div>
+                <!-- NUEVO: Filtro por Tipo de destino -->
+                <div style="width:220px">
+                  <label>Tipo destino</label>
+                  <select id="mv_filter_destType">
+                    <option value="">Todos</option>
+                    <option value="Jardín" ${state.moveDestTypeFilter==='Jardín'?'selected':''}>Jardín</option>
+                    <option value="Departamento" ${state.moveDestTypeFilter==='Departamento'?'selected':''}>Departamento</option>
+                    <option value="Bodega Peñuelas" ${state.moveDestTypeFilter==='Bodega Peñuelas'?'selected':''}>Bodega Peñuelas</option>
+                  </select>
+                </div>
+
                 <button class="btn ok" id="btnExpMovs">Descargar Excel (CSV)</button>
                 <button class="btn ok" id="btnWord">Comprobante (Word)</button>
               </div>
               <div style="overflow-x:auto">
                 <table>
-                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Categoría</th><th>Cantidad</th><th>Destino/Origen</th><th>Notas</th><th class='right'>Acciones</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Categoría</th><th>Cantidad</th><th>Destino/Origen</th><th>Tipo destino</th><th>Notas</th><th class='right'>Acciones</th>
+                    </tr>
+                  </thead>
                   <tbody>${
                     (()=>{
                       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
-                      const list=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
-                      if(list.length===0) return `<tr><td colspan='8' class='muted' style='text-align:center;padding:16px'>Sin movimientos en el rango</td></tr>`;
+                      const list=state.moves
+                        .filter(m=>within(m.date,state.fromDate,state.toDate))
+                        .filter(m=>matchDestType(m, state.moveDestTypeFilter));
+
+                      if(list.length===0) return `<tr><td colspan='9' class='muted' style='text-align:center;padding:16px'>Sin movimientos en el rango${state.moveDestTypeFilter?` (Tipo: ${state.moveDestTypeFilter})`:''}</td></tr>`;
+
                       return list.map(mv=>{
                         const it=itemsMap[mv.itemId];
                         return `<tr>
@@ -465,6 +511,7 @@
                           <td>${it?it.category:''}</td>
                           <td>${mv.qty}</td>
                           <td>${mv.dest||''}</td>
+                          <td>${mv.destType||''}</td>
                           <td>${mv.notes||''}</td>
                           <td class='right'>
                             <button class='btn' data-edit-move='${mv.id}'>Editar</button>
@@ -658,7 +705,12 @@ Arcoíris
         $("#fromDate").onchange = e=> set({fromDate:e.target.value});
         $("#toDate").onchange = e=> set({toDate:e.target.value});
 
-        $("#btnExpMovs").onclick = exportMovimientos;
+        // NUEVO: cambio del filtro por tipo de destino
+        const selFilter = document.getElementById('mv_filter_destType');
+        selFilter && (selFilter.onchange = (e)=> set({ moveDestTypeFilter: e.target.value }));
+
+        // Exportar respetando filtro actual
+        $("#btnExpMovs").onclick = ()=> exportMovimientos(state.moveDestTypeFilter);
 
         const btnSaveMove = document.getElementById('btnSaveMove');
         if(btnSaveMove){
@@ -719,7 +771,7 @@ Arcoíris
           };
         }
 
-        // Edición / Eliminación por fila
+        // Editar/Eliminar por fila
         document.querySelectorAll("[data-edit-move]").forEach(btn=>{
           btn.onclick = ()=>{
             const mv = state.moves.find(x=>x.id===btn.dataset.editMove);
@@ -755,8 +807,11 @@ Arcoíris
             if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
             n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
           }
-          const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
-          if(arr.length===0) return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
+          const arr = Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+
+          if(arr.length===0){
+            return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
+          }
           return `
             <table>
               <thead><tr><th>Semana (Lun-Dom)</th><th>Destino</th><th>Entradas</th><th>Salidas</th><th>Detalle</th></tr></thead>
@@ -1152,8 +1207,8 @@ Arcoíris
         tbody.innerHTML = `<tr><td colspan='7' class='muted' style='text-align:center;padding:16px'>Sin resultados</td></tr>`;
       }else{
         tbody.innerHTML = list.map(it=>{
-          const exist = acc[it.id]||0;
-          const danger = exist <= Number(it.minStock||0) ? 'danger' : '';
+          const acc0 = acc[it.id]||0;
+          const danger = acc0 <= Number(it.minStock||0) ? 'danger' : '';
           return `
             <tr>
               <td>${it.code||''}</td>
@@ -1161,7 +1216,7 @@ Arcoíris
               <td>${it.category}</td>
               <td>${it.unit||''}</td>
               <td>${it.minStock||0}</td>
-              <td class='${danger}'>${exist}</td>
+              <td class='${danger}'>${acc0}</td>
               <td class='right'>
                 <button class='btn' data-edit-item='${it.id}'>Editar</button>
                 <button class='btn bad' data-del-item='${it.id}'>Eliminar</button>

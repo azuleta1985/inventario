@@ -63,7 +63,7 @@
 
   <footer class="wrap" style="padding:20px 16px 40px">
     <div class="muted" style="font-size:12px">
-      Funciona 100% offline (LocalStorage). Exporta CSV (Excel) y permite respaldo (.json).
+      Funciona 100% offline (LocalStorage). Exporta CSV (Excel) y permite respaldo/transferencia (.json).
     </div>
   </footer>
 
@@ -83,25 +83,18 @@
     const qs=(name)=>{ try{ return new URL(location.href).searchParams.get(name); } catch{ return null; } };
     const unique=(arr)=>Array.from(new Set(arr));
 
-    // Backup encoder/decoder (para el link mágico)
+    // Backup encoder/decoder (para link/transferencia si hiciera falta)
     function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
     function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
 
-    // Construye el enlace para clonar datos en otro dispositivo
-    function buildShareLink(){
-      try{
-        const data = { items: state.items, moves: state.moves, dests: state.dests };
-        const b64 = encodeBackup(data);
-        const base = (location.origin + location.pathname).replace(/index\.html$/,'');
-        return `${base}?v=sync&data=${encodeURIComponent(b64)}#import`;
-      }catch(e){
-        console.error(e); alert('No se pudo generar el enlace de transferencia.'); return '';
-      }
-    }
-
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
     const DEST_TYPES=["Departamento","Jardín","Otro"];
-    const LS={items:"inv_off_items_v1",moves:"inv_off_moves_v1",dests:"inv_off_dests_v1"};
+    const LS={
+      items:"inv_off_items_v1",
+      moves:"inv_off_moves_v1",
+      dests:"inv_off_dests_v1",
+      officialDests:"inv_off_official_dests_v1"
+    };
 
     let state={
       tab:"movimientos",
@@ -118,9 +111,13 @@
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // ===== Semilla base =====
-    function seedData(){
-      const seedItems = [
+    // ===== Lista OFICIAL de Jardines/Destinos =====
+    function getOfficialDests(){ return load(LS.officialDests, []); }
+    function setOfficialDests(list){ save(LS.officialDests, Array.from(new Set((list||[]).map(s=>String(s).trim()).filter(Boolean)))); }
+
+    // ===== Semillas de ítems base =====
+    function seedItems(){
+      return [
         { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
         { id: uid(), code:'IMP-085A',    name:'Tóner 85 A',   category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
         { id: uid(), code:'EQP-TOL-001', name:'Toldo Completo', category:'Equipamiento',       unit:'Unidad',  minStock:0, initialStock:0 },
@@ -128,30 +125,33 @@
         { id: uid(), code:'ASE-DET-800', name:'Detergente en Polvo 800 Grs',           category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 },
         { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
       ];
-      const seedDests = ['Bambi','Sol del Valle'];
-      return { seedItems, seedDests };
     }
 
+    // Aplica ítems base y destinos (si hay OFICIAL, usa OFICIAL)
     function applySeed(){
-      const { seedItems, seedDests } = seedData();
-      state.items = seedItems;
-      state.dests = unique([...(state.dests||[]), ...seedDests]);
+      const official = getOfficialDests();
+      state.items = seedItems();
+      if(official.length>0){
+        state.dests = unique([...(state.dests||[]), ...official]);
+      }else{
+        state.dests = unique([...(state.dests||[]), 'Bambi','Sol del Valle']);
+      }
       persist();
-      console.log('Semilla aplicada');
+      console.log('Semilla aplicada. Destinos usados:', (official.length>0?'OFICIALES':'por defecto'));
     }
 
-    // ===== Semilla automática + forzado por URL (?seed=1) =====
+    // Semilla automática / forzar por URL
     (function seedOnLoad(){
       try{
         const force = (qs('seed') === '1');
         const isEmpty = !state.items || state.items.length===0;
         if (isEmpty || force){
           if (isEmpty){ applySeed(); }
-          console.log('seed param:', force, 'isEmpty:', isEmpty);
         }
       }catch(e){ console.warn('Semilla: error opcional', e); }
     })();
 
+    // ===== Utilidades cálculo/exports =====
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
 
@@ -205,6 +205,7 @@
       downloadCSV(`reporte_semanal_${state.fromDate}_${state.toDate}`,rows);
     }
 
+    // ===== UI =====
     function render(){
       const main=$("#main"), sb=stockByItem(), KP=kpis();
       const tabsHtml={
@@ -214,33 +215,6 @@
             <div class="card kpi"><div class="muted">Existencias totales</div><div class="n">${KP.totalExist}</div></div>
             <div class="card kpi"><div class="muted">Entradas (semana)</div><div class="n">${KP.weekIn}</div></div>
             <div class="card kpi"><div class="muted">Salidas (semana)</div><div class="n">${KP.weekOut}</div></div>
-            <div class="card" style="grid-column:1/-1">
-              <div class="row" style="justify-content:space-between">
-                <h3 style="margin:6px 0">Ítems en o bajo stock mínimo</h3>
-                <button class="btn" id="btnRecalc">Recalcular existencias</button>
-              </div>
-              ${(()=>{
-                const low = state.items.filter(it => (sb[it.id]||0) <= Number(it.minStock||0));
-                if(low.length===0) return `<p class='muted'>Todo OK. No hay ítems bajo mínimo.</p>`;
-                return `
-                  <div style="overflow-x:auto">
-                    <table>
-                      <thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Mínimo</th><th>Existencias</th><th></th></tr></thead>
-                      <tbody>
-                        ${low.map(it=>`
-                          <tr>
-                            <td>${it.code||''}</td>
-                            <td>${it.name}</td>
-                            <td>${it.category}</td>
-                            <td>${it.minStock}</td>
-                            <td>${sb[it.id]||0}</td>
-                            <td class='right'><button class='btn' data-edit-item='${it.id}'>Editar</button></td>
-                          </tr>`).join('')}
-                      </tbody>
-                    </table>
-                  </div>`;
-              })()}
-            </div>
           </section>
         `,
         inventario: `
@@ -284,55 +258,20 @@
               <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0">
                 <select id="selRemoveItem" style="min-width:260px">
                   <option value="">-- Seleccione ítem a quitar --</option>
-                  ${state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
-                      .map(it=>`<option value="${it.id}">${it.name} · ${it.category}</option>`).join('')}
                 </select>
                 <button class="btn bad" id="btnRemoveOne">Quitar ítem</button>
                 <button class="btn bad" id="btnRemoveAllItems">Quitar todos los ítems</button>
               </div>
 
-              <!-- Aviso/acción cuando no hay ítems en este dispositivo -->
-              ${(()=>{
-                if((state.items||[]).length>0) return '';
-                return `
-                  <div class="card" style="background:#fffbeb;border-color:#fde68a">
-                    <b>No hay ítems guardados en este dispositivo.</b>
-                    <p class="muted" style="margin:6px 0 10px">
-                      Puedes inicializar los datos base para comenzar inmediatamente.
-                    </p>
-                    <button class="btn pri" id="btnInitSeed">Inicializar datos base</button>
-                  </div>
-                `;
-              })()}
-
               <div style="overflow-x:auto">
                 <table>
-                  <thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th><th class='right'>Acciones</th></tr></thead>
-                  <tbody>
-                    ${(()=>{
-                      const q=state.buscar.trim().toLowerCase();
-                      const list = state.items.filter(it=>{
-                        if(state.catFiltro && it.category!==state.catFiltro) return false;
-                        if(!q) return true;
-                        return (it.name.toLowerCase().includes(q) || (it.code||'').toLowerCase().includes(q) || (it.unit||'').toLowerCase().includes(q));
-                      });
-                      if(list.length===0) return `<tr><td colspan='7' class='muted' style='text-align:center;padding:16px'>Sin resultados</td></tr>`;
-                      const sb2 = stockByItem();
-                      return list.map(it=>`
-                        <tr>
-                          <td>${it.code||''}</td>
-                          <td>${it.name}</td>
-                          <td>${it.category}</td>
-                          <td>${it.unit||''}</td>
-                          <td>${it.minStock||0}</td>
-                          <td class='${((sb2[it.id]||0) <= Number(it.minStock||0)) ? 'danger' : ''}'>${sb2[it.id]||0}</td>
-                          <td class='right'>
-                            <button class='btn' data-edit-item='${it.id}'>Editar</button>
-                            <button class='btn bad' data-del-item='${it.id}'>Eliminar</button>
-                          </td>
-                        </tr>`).join('');
-                    })()}
-                  </tbody>
+                  <thead>
+                    <tr>
+                      <th>Código</th><th>Artículo</th><th>Categoría</th>
+                      <th>Unidad</th><th>Mínimo</th><th>Existencias</th><th class='right'>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="inv_rows"><!-- filas dinámicas --></tbody>
                 </table>
               </div>
             </div>
@@ -347,7 +286,10 @@
               <label>Tipo *</label>
               <select id="mv_type"><option ${state.moveForm.type==='entrada'?'selected':''} value="entrada">entrada</option><option ${state.moveForm.type==='salida'?'selected':''} value="salida">salida</option></select>
               <label>Artículo *</label>
-              <select id="mv_item"><option value="">-- Seleccione --</option>${state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'})).map(it=>`<option ${state.moveForm.itemId===it.id?'selected':''} value='${it.id}'>${it.name} · ${it.category}</option>`).join('')}</select>
+              <select id="mv_item"><option value="">-- Seleccione --</option>${
+                state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
+                .map(it=>`<option ${state.moveForm.itemId===it.id?'selected':''} value='${it.id}'>${it.name} · ${it.category}</option>`).join('')
+              }</select>
               <label>Cantidad *</label>
               <input id="mv_qty" type="number" min="1" value="${state.moveForm.qty}"/>
               <div class="grid g-2">
@@ -378,8 +320,8 @@
               <div style="overflow-x:auto">
                 <table>
                   <thead><tr><th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Categoría</th><th>Cantidad</th><th>Destino/Origen</th><th>Notas</th><th class='right'>Acciones</th></tr></thead>
-                  <tbody>
-                    ${(()=>{
+                  <tbody>${
+                    (()=>{
                       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
                       const list=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
                       if(list.length===0) return `<tr><td colspan='8' class='muted' style='text-align:center;padding:16px'>Sin movimientos en el rango</td></tr>`;
@@ -399,8 +341,8 @@
                           </td>
                         </tr>`;
                       }).join('');
-                    })()}
-                  </tbody>
+                    })()
+                  }</tbody>
                 </table>
               </div>
             </div>
@@ -415,37 +357,6 @@
                 <div style="width:200px"><label>Hasta</label><input id="toDate" type="date" value="${state.toDate}"/></div>
                 <button class="btn" id="btnWeek">Semana actual</button>
                 <button class="btn ok" id="btnExpRep">Descargar Excel (CSV)</button>
-              </div>
-              <div style="overflow-x:auto">
-                <table>
-                  <thead><tr><th>Semana (Lun-Dom)</th><th>Destino</th><th>Entradas</th><th>Salidas</th><th>Detalle</th></tr></thead>
-                  <tbody>
-                    ${(()=>{
-                      const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
-                      const movs=state.moves.filter(m=>within(m.date, state.fromDate, state.toDate));
-                      const map=new Map();
-                      for(const mv of movs){
-                        const s=startOfWeek(parseISO(mv.date)).toISOString().slice(0,10);
-                        const e=endOfWeek(parseISO(mv.date)).toISOString().slice(0,10);
-                        const key=`${s}_${e}_${mv.dest||'-'}`;
-                        const it=itemsMap[mv.itemId];
-                        if(!map.has(key)) map.set(key,{s,e,dest: mv.dest||'-',in:0,out:0,det:[]});
-                        const n=map.get(key);
-                        if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
-                        n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
-                      }
-                      const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
-                      if(arr.length===0) return `<tr><td colspan='5' class='muted' style='text-align:center;padding:16px'>No hay datos en el rango</td></tr>`;
-                      return arr.map(g=>`<tr>
-                        <td class='nowrap'>${g.s} a ${g.e}</td>
-                        <td>${g.dest}</td>
-                        <td>${g.in}</td>
-                        <td>${g.out}</td>
-                        <td><ul style='margin:0 0 0 18px'>${g.det.map(d=>`<li>${d.articulo} · ${d.fecha} · ${d.tipo} · ${d.cantidad}</li>`).join('')}</ul></td>
-                      </tr>`).join('');
-                    })()}
-                  </tbody>
-                </table>
               </div>
             </div>
           </section>
@@ -463,24 +374,49 @@
                 </label>
               </div>
               <p class="muted" style="margin-top:6px">
-                “Poner todos los ítems (semilla)” carga los artículos base solo en este dispositivo (sin usar respaldo).
+                “Poner todos los ítems (semilla)” carga los artículos base en este dispositivo.
               </p>
             </div>
 
             <div class="card">
-              <h3 style="margin:6px 0">Enviar a otro dispositivo</h3>
+              <h3 style="margin:6px 0">Transferencia PC → Celular (archivo)</h3>
               <div class="row" style="gap:8px;flex-wrap:wrap">
-                <button class="btn ok" id="btnMakeShareLink">Enviar mis datos a otro dispositivo (link)</button>
-                <button class="btn" id="btnCopyShareLink">Copiar enlace</button>
+                <button class="btn ok" id="btnMakeTransferFile">Crear archivo de transferencia (.json)</button>
+                <label class="btn" style="cursor:pointer">Importar transferencia (.json)
+                  <input id="fileTransferImport" type="file" accept="application/json" style="display:none"/>
+                </label>
               </div>
-              <textarea id="shareLink" readonly rows="3" style="width:100%;margin-top:8px" placeholder="Aquí aparecerá el enlace para abrir en tu celular"></textarea>
               <ol class="muted" style="margin:8px 0 0 18px">
-                <li>En tu PC, pulsa “Enviar mis datos…”</li>
-                <li>Copia el enlace y envíalo por WhatsApp/Correo a tu celular</li>
-                <li>Ábrelo en el celular: la app cargará y guardará tus datos automáticamente</li>
+                <li>En PC, crea el archivo y envíalo al celular.</li>
+                <li>En el celular, importa el archivo aquí.</li>
               </ol>
             </div>
 
+            <div class="card" style="grid-column:1/-1">
+              <h3 style="margin:6px 0">Lista oficial de Jardines/Destinos</h3>
+              <p class="muted" style="margin:6px 0">
+                Pega tu lista oficial (uno por línea). Guárdala como OFICIAL y aplícala en este u otros dispositivos.
+              </p>
+              <textarea id="txtOfficialDests" rows="8" style="width:100%;" placeholder="Ejemplo:
+Jardín Bambi
+Sol del Valle
+Arcoíris
+..."></textarea>
+              <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+                <button class="btn" id="btnOfficialLoadFromCurrent">Cargar desde destinos actuales</button>
+                <button class="btn ok" id="btnOfficialSave">Guardar como OFICIAL</button>
+                <button class="btn pri" id="btnOfficialApply">Aplicar OFICIAL en este dispositivo</button>
+                <button class="btn" id="btnOfficialExportJSON">Descargar OFICIAL (.json)</button>
+              </div>
+              <p class="muted" style="margin-top:6px">
+                Consejo: guarda la OFICIAL aquí, aplícala y luego usa “Crear archivo de transferencia” para clonarla en el celular.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 style="margin:6px 0">Categorías sugeridas</h3>
+              <ul style="margin:6px 0 0 18px">${CATS.map(c=>`<li>${c}</li>`).join('')}</ul>
+            </div>
           </section>
         `
       };
@@ -488,18 +424,12 @@
       $("#main").innerHTML = tabsHtml[state.tab];
       $$(".tabs button").forEach(b=>{ b.classList.toggle("active", b.dataset.tab===state.tab); b.onclick = ()=> set({tab: b.dataset.tab}); });
 
-      // ===== Inicio
-      if(state.tab==='inicio'){
-        const r=$("#btnRecalc"); r && (r.onclick = ()=> set({}));
-        $$("[data-edit-item]").forEach(btn=>{
-          btn.onclick=()=>{ const it=state.items.find(x=>x.id===btn.dataset.editItem); if(!it) return; set({tab:'inventario', itemForm:{...it}}); };
-        });
-      }
-
-      // ===== Inventario
+      // ===== Inventario =====
       if(state.tab==='inventario'){
-        $("#buscar").oninput = e=> set({buscar: e.target.value});
-        $("#catFiltro").onchange = e=> set({catFiltro: e.target.value});
+        // Handlers sin re-render completo
+        $("#buscar").oninput = (e)=>{ state.buscar = e.target.value; renderInventarioRows(); };
+        $("#catFiltro").onchange = (e)=>{ state.catFiltro = e.target.value; renderInventarioRows(); };
+
         $("#btnExpInv").onclick = exportInventario;
 
         $("#btnSaveItem").onclick = ()=>{
@@ -523,37 +453,28 @@
 
         $("#btnClearItem").onclick = ()=> set({itemForm:{id:null, code:'', name:'', category:'', unit:'Unidad', minStock:0, initialStock:0}});
 
-        // Eliminar por fila (ya existía)
-        $$("[data-edit-item]").forEach(btn=> btn.onclick=()=>{ const it=state.items.find(x=>x.id===btn.dataset.editItem); if(!it) return; set({itemForm:{...it}}); });
-        $$("[data-del-item]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar ítem? Se mantendrán los movimientos históricos.')) return; const id=btn.dataset.delItem; set({items: state.items.filter(it=>it.id!==id)}); });
-
-        // NUEVOS: Quitar ítem desde selector + Quitar todos + Inicializar datos base
-        const selRemove = $("#selRemoveItem");
-        const btnRemoveOne = $("#btnRemoveOne");
-        btnRemoveOne && (btnRemoveOne.onclick = ()=>{
-          const id = (selRemove && selRemove.value) || '';
+        // Selector para quitar ítem y botón quitar todos (se recalculan tras cada repintado)
+        $("#btnRemoveOne").onclick = ()=>{
+          const sel = $("#selRemoveItem");
+          const id = (sel && sel.value) || '';
           if(!id) return alert('Selecciona un ítem a quitar');
           const it = state.items.find(x=>x.id===id);
           if(!it) return alert('Ítem no encontrado');
           if(!confirm(`¿Quitar el ítem "${it.name}"?`)) return;
           set({ items: state.items.filter(x=>x.id!==id) });
-        });
-
-        const btnRemoveAllItems = $("#btnRemoveAllItems");
-        btnRemoveAllItems && (btnRemoveAllItems.onclick = ()=>{
+        };
+        $("#btnRemoveAllItems").onclick = ()=>{
           if(!state.items.length) return alert('No hay ítems para quitar');
           if(!confirm('Esto quitará TODOS los ítems. Los movimientos quedarán y mostrarán "(Eliminado)". ¿Continuar?')) return;
           set({ items: [] });
-        });
+        };
 
-        const btnInitSeed = $("#btnInitSeed");
-        btnInitSeed && (btnInitSeed.onclick = ()=>{
-          if(!confirm('Esto cargará los ítems base en este dispositivo. ¿Continuar?')) return;
-          applySeed(); render();
-        });
+        // Pintamos filas iniciales + llenamos selector de remover
+        fillRemoveSelector();
+        renderInventarioRows();
       }
 
-      // ===== Movimientos
+      // ===== Movimientos =====
       if(state.tab==='movimientos'){
         const syncLight=()=>{
           state.moveForm = {
@@ -575,11 +496,13 @@
         $("#mv_destType").onchange = ()=>{ syncLight(); syncAndRender(); };
         $("#mv_dest").oninput = syncLight; $("#mv_notes").oninput = syncLight;
         $("#mv_qty").onchange = ()=>{ syncLight(); syncAndRender(); };
+
         $("#fromDate").onchange = e=> set({fromDate:e.target.value});
         $("#toDate").onchange = e=> set({toDate:e.target.value});
+
         $("#btnExpMovs").onclick = exportMovimientos;
 
-        // Comprobante (Word) SIN librerías externas: genera .doc (HTML)
+        // Comprobante .doc (HTML)
         $("#btnWord") && ($("#btnWord").onclick = async ()=>{
           try{
             const date = prompt('Fecha del comprobante (YYYY-MM-DD):', state.moveForm?.date || state.fromDate || '');
@@ -648,25 +571,11 @@
             alert('No se pudo generar el comprobante: ' + e.message);
           }
         });
-
-        $("#btnSaveMove").onclick = ()=>{
-          const f = {...state.moveForm};
-          if(!f.itemId || !f.date || !f.type) return alert('Complete todos los campos obligatorios');
-          if(Number(f.qty)<=0) return alert('La cantidad debe ser mayor a 0');
-          const newMv = { id: f.id || uid(), date:f.date, type:f.type, itemId:f.itemId, qty:Number(f.qty), destType:f.destType, dest:(f.dest||'').trim(), notes:(f.notes||'').trim() };
-          let moves=[...state.moves];
-          if(f.id){ moves = moves.map(m=> m.id===f.id ? newMv : m); } else { moves = [newMv, ...moves]; }
-          const dests = newMv.dest? Array.from(new Set([newMv.dest, ...state.dests])).slice(0,100) : state.dests;
-          set({moves, dests, moveForm:{id:null, date:todayISO(), type:'salida', itemId:'', qty:1, destType:'Departamento', dest:'', notes:''}});
-        };
-        $("#btnClearMove").onclick = ()=> set({moveForm:{id:null, date:todayISO(), type:'salida', itemId:'', qty:1, destType:'Departamento', dest:'', notes:''}});
-        $$("[data-edit-move]").forEach(btn=> btn.onclick=()=>{ const mv=state.moves.find(x=>x.id===btn.dataset.editMove); if(!mv) return; set({moveForm:{...mv}}); });
-        $$("[data-del-move]").forEach(btn=> btn.onclick=()=>{ if(!confirm('¿Eliminar movimiento?')) return; const id=btn.dataset.delMove; set({moves: state.moves.filter(m=>m.id!==id)}); });
       }
 
-      // ===== Config
+      // ===== Config =====
       if(state.tab==='config'){
-        // Semilla en Config
+        // Poner todos los ítems (semilla)
         const btnCfgSeedAll = $("#btnCfgSeedAll");
         btnCfgSeedAll && (btnCfgSeedAll.onclick = ()=>{
           const hasItems = state.items && state.items.length>0;
@@ -674,7 +583,7 @@
           applySeed(); render(); alert('Ítems base cargados en este dispositivo.');
         });
 
-        // Respaldo
+        // Respaldo clásico
         $("#btnBackup").onclick = ()=>{
           const data={ items:state.items, moves:state.moves, dests:state.dests };
           const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
@@ -693,32 +602,172 @@
           reader.readAsText(f);
         };
 
-        // Enviar a otro dispositivo (link mágico)
-        const btnMakeShareLink = $("#btnMakeShareLink");
-        const btnCopyShareLink = $("#btnCopyShareLink");
-        const txtShareLink     = $("#shareLink");
+        // Transferencia PC→Celular por archivo
+        const btnMakeTransferFile = $("#btnMakeTransferFile");
+        const fileTransferImport   = $("#fileTransferImport");
 
-        btnMakeShareLink && (btnMakeShareLink.onclick = ()=>{
-          const url = buildShareLink();
-          if(url){ txtShareLink.value = url; }
+        btnMakeTransferFile && (btnMakeTransferFile.onclick = ()=>{
+          try{
+            const payload = {
+              transferVersion: 1,
+              createdAt: new Date().toISOString(),
+              items: state.items || [],
+              moves: state.moves || [],
+              dests: state.dests || [],
+              officialDests: getOfficialDests() || []
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `transfer_inventario_${(new Date()).toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            alert('Archivo de transferencia creado. Envíalo a tu celular y luego impórtalo allí.');
+          }catch(e){
+            console.error(e);
+            alert('No se pudo crear el archivo de transferencia.');
+          }
         });
 
-        btnCopyShareLink && (btnCopyShareLink.onclick = async ()=>{
-          if(!txtShareLink.value){ alert('Primero genera el enlace.'); return; }
-          try{
-            await navigator.clipboard.writeText(txtShareLink.value);
-            alert('Enlace copiado. Envíalo a tu celular y ábrelo allí.');
-          }catch{
-            txtShareLink.focus(); txtShareLink.select();
-            document.execCommand('copy');
-            alert('Enlace copiado (método alternativo).');
-          }
+        fileTransferImport && (fileTransferImport.onchange = (e)=>{
+          const f = e.target.files?.[0];
+          if (!f) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            try{
+              const data = JSON.parse(reader.result);
+              if (data && Array.isArray(data.items) && Array.isArray(data.moves)) {
+                set({
+                  items: data.items,
+                  moves: data.moves,
+                  dests: data.dests || state.dests
+                });
+                if (Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
+                alert('Transferencia importada. Datos guardados en este dispositivo.');
+              } else {
+                alert('Archivo de transferencia inválido.');
+              }
+            }catch{
+              alert('No se pudo leer el archivo de transferencia.');
+            }
+          };
+          reader.readAsText(f);
+        });
+
+        // Lista OFICIAL de Jardines/Destinos
+        const txtOfficial = $("#txtOfficialDests");
+        const btnLoadCur  = $("#btnOfficialLoadFromCurrent");
+        const btnSaveOff  = $("#btnOfficialSave");
+        const btnApplyOff = $("#btnOfficialApply");
+        const btnExpOff   = $("#btnOfficialExportJSON");
+
+        const off = getOfficialDests();
+        if (txtOfficial && (!txtOfficial.value || txtOfficial.value.trim()==='') && off.length>0){
+          txtOfficial.value = off.join("\n");
+        }
+
+        function linesToArray(raw){
+          return (raw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        }
+
+        btnLoadCur && (btnLoadCur.onclick = ()=>{
+          const text = (state.dests||[]).slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).join('\n');
+          txtOfficial.value = text;
+          alert('Cargados los destinos actuales al cuadro.');
+        });
+
+        btnSaveOff && (btnSaveOff.onclick = ()=>{
+          const list = linesToArray(txtOfficial.value);
+          if (!list.length) return alert('Pega primero tu lista oficial (uno por línea).');
+          setOfficialDests(list);
+          alert(`Lista OFICIAL guardada (${list.length} destinos).`);
+        });
+
+        btnApplyOff && (btnApplyOff.onclick = ()=>{
+          const list = getOfficialDests();
+          if (!list.length) return alert('No hay lista OFICIAL guardada. Pégala y pulsa “Guardar como OFICIAL”.');
+          set({ dests: unique(list) });
+          alert('Lista OFICIAL aplicada en este dispositivo.');
+        });
+
+        btnExpOff && (btnExpOff.onclick = ()=>{
+          const list = getOfficialDests();
+          if (!list.length) return alert('No hay lista OFICIAL para descargar.');
+          const blob = new Blob([JSON.stringify({officialDests:list}, null, 2)], {type:'application/json'});
+          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='oficial_jardines.json'; a.click(); URL.revokeObjectURL(a.href);
         });
       }
     }
 
+    // ===== Funciones auxiliares para Inventario (pintado parcial) =====
+    function fillRemoveSelector(){
+      const sel = document.getElementById('selRemoveItem');
+      if(!sel) return;
+      sel.innerHTML = `<option value="">-- Seleccione ítem a quitar --</option>` +
+        state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
+          .map(it=>`<option value="${it.id}">${it.name} · ${it.category}</option>`).join('');
+    }
+
+    function renderInventarioRows(){
+      const tbody = document.getElementById('inv_rows');
+      if(!tbody) return;
+
+      // cálculo local de existencias (para no depender del render global)
+      const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
+      for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); }
+
+      const q = (state.buscar||'').trim().toLowerCase();
+      const list = state.items.filter(it=>{
+        if(state.catFiltro && it.category!==state.catFiltro) return false;
+        if(!q) return true;
+        return it.name.toLowerCase().includes(q)
+            || (it.code||'').toLowerCase().includes(q)
+            || (it.unit||'').toLowerCase().includes(q);
+      });
+
+      if(list.length===0){
+        tbody.innerHTML = `<tr><td colspan='7' class='muted' style='text-align:center;padding:16px'>Sin resultados</td></tr>`;
+      }else{
+        tbody.innerHTML = list.map(it=>{
+          const exist = acc[it.id]||0;
+          const danger = exist <= Number(it.minStock||0) ? 'danger' : '';
+          return `
+            <tr>
+              <td>${it.code||''}</td>
+              <td>${it.name}</td>
+              <td>${it.category}</td>
+              <td>${it.unit||''}</td>
+              <td>${it.minStock||0}</td>
+              <td class='${danger}'>${exist}</td>
+              <td class='right'>
+                <button class='btn' data-edit-item='${it.id}'>Editar</button>
+                <button class='btn bad' data-del-item='${it.id}'>Eliminar</button>
+              </td>
+            </tr>`;
+        }).join('');
+      }
+
+      // Re-cablear acciones por fila (porque tbody se regenera)
+      document.querySelectorAll("[data-edit-item]").forEach(btn=>{
+        btn.onclick = ()=>{
+          const it = state.items.find(x=>x.id===btn.dataset.editItem);
+          if(!it) return;
+          set({ itemForm:{...it} });
+        };
+      });
+      document.querySelectorAll("[data-del-item]").forEach(btn=>{
+        btn.onclick = ()=>{
+          if(!confirm("¿Eliminar ítem? Se mantendrán los movimientos históricos.")) return;
+          const id = btn.dataset.delItem;
+          set({ items: state.items.filter(it=>it.id!==id) });
+        };
+      });
+
+      // Actualiza selector de quitar si cambia el listado
+      fillRemoveSelector();
+    }
+
     // ===== Botones superiores =====
-    // “Poner todos los ítems”: inserta la semilla (pide confirmación si ya hay datos)
     $("#btnSeedAll").onclick = ()=>{
       const hasItems = state.items && state.items.length>0;
       if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
@@ -745,7 +794,7 @@
 
     $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos de este dispositivo. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); } };
 
-    // ===== Render inicial & restauración desde enlace =====
+    // ===== Render inicial & restauración desde enlace (si existiera) =====
     render();
 
     (function restoreFromQuery(){
@@ -755,6 +804,7 @@
         const data=decodeBackup(raw);
         if(data && data.items && data.moves){
           state.items=data.items; state.moves=data.moves; state.dests=data.dests||[];
+          if (Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
           persist();
           alert('Datos restaurados desde el enlace. Ya están guardados en este dispositivo.');
         }

@@ -146,7 +146,10 @@
     }
 
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
-    const DEST_TYPES=["Departamento","Jardín","Otro"];
+    // >>>>>>>>> Cambiado: agregado "Bodega Peñuelas"
+    const DEST_TYPES=["Departamento","Jardín","Bodega Peñuelas","Otro"];
+    // <<<<<<<<<
+
     const LS={
       items:"inv_off_items_v1",
       moves:"inv_off_moves_v1",
@@ -249,7 +252,7 @@
       const main=$("#main");
       const sb=stockByItem();
 
-      // Umbrales para Inicio
+      // Umbrales para Inicio (según tu pedido previo)
       const LOW_THR = 15;
       const HIGH_THR = 50;
 
@@ -264,18 +267,9 @@
       const tabsHtml={
         inicio: `
           <section class="grid g-3">
-            <div class="card kpi">
-              <div class="muted">Ítems</div>
-              <div class="n">${state.items.length}</div>
-            </div>
-            <div class="card kpi">
-              <div class="muted">Movimientos</div>
-              <div class="n">${state.moves.length}</div>
-            </div>
-            <div class="card kpi">
-              <div class="muted">Destinos</div>
-              <div class="n">${state.dests.length}</div>
-            </div>
+            <div class="card kpi"><div class="muted">Ítems</div><div class="n">${state.items.length}</div></div>
+            <div class="card kpi"><div class="muted">Movimientos</div><div class="n">${state.moves.length}</div></div>
+            <div class="card kpi"><div class="muted">Destinos</div><div class="n">${state.dests.length}</div></div>
           </section>
 
           <section class="card" style="margin-top:12px">
@@ -521,9 +515,6 @@
                   <input id="fileRestore" type="file" accept="application/json" style="display:none"/>
                 </label>
               </div>
-              <p class="muted" style="margin-top:6px">
-                “Poner todos los ítems (semilla)” carga los artículos base en este dispositivo.
-              </p>
             </div>
 
             <div class="card">
@@ -569,7 +560,7 @@ Arcoíris
       $("#main").innerHTML = tabsHtml[state.tab];
       $$(".tabs button").forEach(b=>{ b.classList.toggle("active", b.dataset.tab===state.tab); b.onclick = ()=> set({tab: b.dataset.tab}); });
 
-      // ===== INICIO: handlers export CSV (bajo/alto stock) =====
+      // ===== INICIO: export CSV (bajo/alto stock) =====
       if(state.tab==='inicio'){
         const LOW_THR = 15, HIGH_THR = 50;
         const sb = stockByItem();
@@ -762,13 +753,10 @@ Arcoíris
             if(!map.has(key)) map.set(key,{s,e,dest:mv.dest||'-',in:0,out:0,det:[]});
             const n = map.get(key);
             if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
-            n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
+            n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:"(Eliminado)",cantidad:mv.qty});
           }
-          const arr = Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
-
-          if(arr.length===0){
-            return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
-          }
+          const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+          if(arr.length===0) return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
           return `
             <table>
               <thead><tr><th>Semana (Lun-Dom)</th><th>Destino</th><th>Entradas</th><th>Salidas</th><th>Detalle</th></tr></thead>

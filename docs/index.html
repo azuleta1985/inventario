@@ -83,6 +83,22 @@
     const qs=(name)=>{ try{ return new URL(location.href).searchParams.get(name); } catch{ return null; } };
     const unique=(arr)=>Array.from(new Set(arr));
 
+    // Backup encoder/decoder (para el link mágico)
+    function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
+    function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
+
+    // Construye el enlace para clonar datos en otro dispositivo
+    function buildShareLink(){
+      try{
+        const data = { items: state.items, moves: state.moves, dests: state.dests };
+        const b64 = encodeBackup(data);
+        const base = (location.origin + location.pathname).replace(/index\.html$/,'');
+        return `${base}?v=sync&data=${encodeURIComponent(b64)}#import`;
+      }catch(e){
+        console.error(e); alert('No se pudo generar el enlace de transferencia.'); return '';
+      }
+    }
+
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
     const DEST_TYPES=["Departamento","Jardín","Otro"];
     const LS={items:"inv_off_items_v1",moves:"inv_off_moves_v1",dests:"inv_off_dests_v1"};
@@ -102,7 +118,7 @@
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // ===== Semilla base (lo que “Poner todos los ítems” insertará) =====
+    // ===== Semilla base =====
     function seedData(){
       const seedItems = [
         { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
@@ -130,7 +146,7 @@
         const force = (qs('seed') === '1');
         const isEmpty = !state.items || state.items.length===0;
         if (isEmpty || force){
-          if (isEmpty){ applySeed(); } // sólo si está vacío se insertan
+          if (isEmpty){ applySeed(); }
           console.log('seed param:', force, 'isEmpty:', isEmpty);
         }
       }catch(e){ console.warn('Semilla: error opcional', e); }
@@ -436,19 +452,35 @@
         `,
         config: `
           <section class="grid g-2">
+
             <div class="card">
-              <h3 style="margin:6px 0">Categorías sugeridas</h3>
-              <ul style="margin:6px 0 0 18px">${CATS.map(c=>`<li>${c}</li>`).join('')}</ul>
-              <p class="muted" style="margin-top:6px">También puedes exportar Inventario, Movimientos y el Reporte semanal como Excel (CSV) desde sus secciones.</p>
-            </div>
-            <div class="card">
-              <h3 style="margin:6px 0">Respaldo</h3>
+              <h3 style="margin:6px 0">Acciones rápidas</h3>
               <div class="row" style="gap:8px;flex-wrap:wrap">
+                <button class="btn pri" id="btnCfgSeedAll">Poner todos los ítems (semilla)</button>
                 <button class="btn" id="btnBackup">Descargar respaldo (.json)</button>
-                <label class="btn" style="cursor:pointer">Cargar respaldo<input id="fileRestore" type="file" accept="application/json" style="display:none"/></label>
+                <label class="btn" style="cursor:pointer">Cargar respaldo
+                  <input id="fileRestore" type="file" accept="application/json" style="display:none"/>
+                </label>
               </div>
-              <p class="muted" style="margin-top:6px">Tus datos se guardan automáticamente en este navegador (LocalStorage).</p>
+              <p class="muted" style="margin-top:6px">
+                “Poner todos los ítems (semilla)” carga los artículos base solo en este dispositivo (sin usar respaldo).
+              </p>
             </div>
+
+            <div class="card">
+              <h3 style="margin:6px 0">Enviar a otro dispositivo</h3>
+              <div class="row" style="gap:8px;flex-wrap:wrap">
+                <button class="btn ok" id="btnMakeShareLink">Enviar mis datos a otro dispositivo (link)</button>
+                <button class="btn" id="btnCopyShareLink">Copiar enlace</button>
+              </div>
+              <textarea id="shareLink" readonly rows="3" style="width:100%;margin-top:8px" placeholder="Aquí aparecerá el enlace para abrir en tu celular"></textarea>
+              <ol class="muted" style="margin:8px 0 0 18px">
+                <li>En tu PC, pulsa “Enviar mis datos…”</li>
+                <li>Copia el enlace y envíalo por WhatsApp/Correo a tu celular</li>
+                <li>Ábrelo en el celular: la app cargará y guardará tus datos automáticamente</li>
+              </ol>
+            </div>
+
           </section>
         `
       };
@@ -517,8 +549,7 @@
         const btnInitSeed = $("#btnInitSeed");
         btnInitSeed && (btnInitSeed.onclick = ()=>{
           if(!confirm('Esto cargará los ítems base en este dispositivo. ¿Continuar?')) return;
-          applySeed();
-          render();
+          applySeed(); render();
         });
       }
 
@@ -635,6 +666,15 @@
 
       // ===== Config
       if(state.tab==='config'){
+        // Semilla en Config
+        const btnCfgSeedAll = $("#btnCfgSeedAll");
+        btnCfgSeedAll && (btnCfgSeedAll.onclick = ()=>{
+          const hasItems = state.items && state.items.length>0;
+          if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
+          applySeed(); render(); alert('Ítems base cargados en este dispositivo.');
+        });
+
+        // Respaldo
         $("#btnBackup").onclick = ()=>{
           const data={ items:state.items, moves:state.moves, dests:state.dests };
           const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
@@ -652,17 +692,37 @@
           };
           reader.readAsText(f);
         };
+
+        // Enviar a otro dispositivo (link mágico)
+        const btnMakeShareLink = $("#btnMakeShareLink");
+        const btnCopyShareLink = $("#btnCopyShareLink");
+        const txtShareLink     = $("#shareLink");
+
+        btnMakeShareLink && (btnMakeShareLink.onclick = ()=>{
+          const url = buildShareLink();
+          if(url){ txtShareLink.value = url; }
+        });
+
+        btnCopyShareLink && (btnCopyShareLink.onclick = async ()=>{
+          if(!txtShareLink.value){ alert('Primero genera el enlace.'); return; }
+          try{
+            await navigator.clipboard.writeText(txtShareLink.value);
+            alert('Enlace copiado. Envíalo a tu celular y ábrelo allí.');
+          }catch{
+            txtShareLink.focus(); txtShareLink.select();
+            document.execCommand('copy');
+            alert('Enlace copiado (método alternativo).');
+          }
+        });
       }
     }
 
     // ===== Botones superiores =====
-    // “Poner todos los ítems”: inserta la semilla SIEMPRE (pide confirmación cuando ya hay datos)
+    // “Poner todos los ítems”: inserta la semilla (pide confirmación si ya hay datos)
     $("#btnSeedAll").onclick = ()=>{
       const hasItems = state.items && state.items.length>0;
       if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
-      applySeed();
-      render();
-      alert('Ítems base cargados correctamente.');
+      applySeed(); render(); alert('Ítems base cargados correctamente.');
     };
 
     $("#btnEjemplo").onclick = ()=>{
@@ -688,14 +748,16 @@
     // ===== Render inicial & restauración desde enlace =====
     render();
 
-    function encodeBackup(d){ const j=JSON.stringify(d); return btoa(unescape(encodeURIComponent(j))); }
-    function decodeBackup(b){ try{ const j=decodeURIComponent(escape(atob(b))); return JSON.parse(j); }catch(e){ return null; } }
     (function restoreFromQuery(){
       try{
         const p=new URLSearchParams(location.search);
         const raw=p.get("data"); if(!raw) return;
         const data=decodeBackup(raw);
-        if(data && data.items && data.moves){ state.items=data.items; state.moves=data.moves; state.dests=data.dests||[]; persist(); alert('Respaldo restaurado desde el enlace.'); }
+        if(data && data.items && data.moves){
+          state.items=data.items; state.moves=data.moves; state.dests=data.dests||[];
+          persist();
+          alert('Datos restaurados desde el enlace. Ya están guardados en este dispositivo.');
+        }
       }catch{}
     })();
   })();

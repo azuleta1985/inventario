@@ -105,8 +105,9 @@
     const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
     const qs=(name)=>{ try{ return new URL(location.href).searchParams.get(name); } catch{ return null; } };
     const unique=(arr)=>Array.from(new Set(arr));
+    const safeFile=(s)=>String(s||'').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80);
 
-    // Toast reutilizable
+    // Toast
     function showToast(msg, type='ok', ms=2200){
       const el = document.getElementById('toast');
       if(!el) return;
@@ -127,7 +128,6 @@
       };
       const body   = rows.map(r => r.map(c => esc(c)).join(delimiter)).join("\r\n");
       const text   = `sep=${delimiter}\r\n` + body + "\r\n";
-      // UTF‑16 LE buffer (+1 para BOM)
       const buf = new Uint16Array(text.length + 1);
       buf[0] = 0xFEFF; // BOM
       for (let i = 0; i < text.length; i++) buf[i+1] = text.charCodeAt(i);
@@ -163,11 +163,11 @@
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // Lista oficial de Jardines/Destinos
+    // Lista OFICIAL de Jardines/Destinos
     function getOfficialDests(){ return load(LS.officialDests, []); }
     function setOfficialDests(list){ save(LS.officialDests, Array.from(new Set((list||[]).map(s=>String(s).trim()).filter(Boolean)))); }
 
-    // Semillas de ítems base
+    // Semillas
     function seedItems(){
       return [
         { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
@@ -178,8 +178,6 @@
         { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
       ];
     }
-
-    // Aplica ítems base y destinos (si hay OFICIAL, usa OFICIAL)
     function applySeed(){
       const official = getOfficialDests();
       state.items = seedItems();
@@ -188,32 +186,33 @@
         : unique([...(state.dests||[]), 'Bambi','Sol del Valle']);
       persist();
     }
-
-    // Semilla automática / forzar por URL
     (function seedOnLoad(){
       try{
         const force = (qs('seed') === '1');
         const isEmpty = !state.items || state.items.length===0;
-        if (isEmpty || force){
-          if (isEmpty){ applySeed(); }
-        }
+        if (isEmpty || force){ if (isEmpty){ applySeed(); } }
       }catch(e){}
     })();
 
-    // ===== Utilidades cálculo/exports =====
+    // ===== Calcular/Exportar =====
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
 
-    function exportInventario(){ const sb=stockByItem();
+    function exportInventario(){
+      const sb=stockByItem();
       const rows=[["Código","Artículo","Categoría","Unidad","Stock mínimo","Existencias"]];
       for(const it of state.items) rows.push([it.code||"",it.name,it.category,it.unit||"Unidad",Number(it.minStock||0),Number(sb[it.id]||0)]);
       downloadCSV(`inventario_${todayISO()}`,rows);
     }
 
-    function exportMovimientos(){ const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
+    function exportMovimientos(){
+      const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
       const movs=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
-      for(const mv of movs){ const it=itemsMap[mv.itemId]; rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest||"",mv.destType||"",mv.notes||""]); }
+      for(const mv of movs){
+        const it=itemsMap[mv.itemId];
+        rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest||"",mv.destType||"",mv.notes||""]);
+      }
       downloadCSV(`movimientos_${state.fromDate}_a_${state.toDate}`,rows);
     }
 
@@ -396,6 +395,9 @@
                 <button class="btn ok" id="btnExpRep">Descargar CSV (por semana)</button>
                 <button class="btn ok" id="btnExpRepDest">Descargar CSV (por Destino)</button>
                 <button class="btn ok" id="btnExpSimple">Descargar CSV (Jardín, Fecha, Producto, Cantidad)</button>
+                <button class="btn ok" id="btnExpPerGarden">Descargar por Jardín (archivos separados)</button>
+                <!-- NUEVO -->
+                <button class="btn ok" id="btnExpPerDept">Descargar por Departamento (archivos separados)</button>
               </div>
 
               <div id="repContainer" style="overflow-x:auto"></div>
@@ -714,7 +716,7 @@ Arcoíris
           return html;
         }
 
-        // === CSV simple: Jardín | Fecha | Producto | Cantidad (solo SALIDAS)
+        // CSV simple: Jardín | Fecha | Producto | Cantidad (solo SALIDAS)
         function buildRowsSimpleJPQF(){
           const movs = state.moves.filter(m => m.type==='salida' && within(m.date, state.fromDate, state.toDate));
           const imap = new Map(state.items.map(it=>[it.id,it]));
@@ -729,13 +731,100 @@ Arcoíris
           const rows = [["Jardín","Fecha","Producto","Cantidad"]];
           for(const mv of movs){
             rows.push([
-              (mv.dest||'').trim() || '(Sin destino)',   // Jardín
-              mv.date,                                   // Fecha
-              imap.get(mv.itemId)?.name || '(Eliminado)',// Producto
-              Number(mv.qty||0)                          // Cantidad
+              (mv.dest||'').trim() || '(Sin destino)',
+              mv.date,
+              imap.get(mv.itemId)?.name || '(Eliminado)',
+              Number(mv.qty||0)
             ]);
           }
           return rows;
+        }
+
+        // === Por Jardín: un archivo por Jardín (solo SALIDAS)
+        function exportPerGarden(){
+          const base = state.moves.filter(m => m.type==='salida' && within(m.date, state.fromDate, state.toDate) && (m.dest||'').trim()!=='');
+          if(base.length===0){ alert('No hay ENTREGAS (salidas) en el rango.'); return; }
+          const byDest = new Map();
+          for(const mv of base){
+            const d = (mv.dest||'').trim();
+            if(!byDest.has(d)) byDest.set(d, []);
+            byDest.get(d).push(mv);
+          }
+          const itemsMap = new Map(state.items.map(it=>[it.id,it]));
+          for(const [dest, arr] of byDest){
+            arr.sort((a,b)=>{
+              const af=a.date.localeCompare(b.date);
+              if(af!==0) return af;
+              const an=(itemsMap.get(a.itemId)?.name||'(Eliminado)').localeCompare(itemsMap.get(b.itemId)?.name||'(Eliminado)','es',{sensitivity:'base'});
+              return an;
+            });
+            const rows = [];
+            rows.push(["Jardín", dest]);
+            rows.push([""]);
+            rows.push(["Fecha","Producto","Cantidad","Tipo","Notas"]);
+            for(const mv of arr){
+              rows.push([
+                mv.date,
+                itemsMap.get(mv.itemId)?.name || '(Eliminado)',
+                Number(mv.qty||0),
+                mv.type,
+                mv.notes||""
+              ]);
+            }
+            const file = `entregas_${safeFile(dest)}_${state.fromDate}_a_${state.toDate}`;
+            downloadCSV(file, rows);
+          }
+          showToast(`Descargados ${byDest.size} archivo(s) por Jardín`, 'ok', 2000);
+        }
+
+        // === NUEVO: Por Departamento — un archivo por Departamento (solo SALIDAS)
+        function exportPerDepartment(){
+          const base = state.moves.filter(m =>
+            m.type==='salida' &&
+            m.destType==='Departamento' &&
+            within(m.date, state.fromDate, state.toDate) &&
+            (m.dest||'').trim()!==''
+          );
+          if(base.length===0){ alert('No hay ENTREGAS (salidas) a Departamentos en el rango.'); return; }
+
+          // Agrupar por Departamento
+          const byDept = new Map(); // dept -> [movs]
+          for(const mv of base){
+            const d = (mv.dest||'').trim();
+            if(!byDept.has(d)) byDept.set(d, []);
+            byDept.get(d).push(mv);
+          }
+
+          const itemsMap = new Map(state.items.map(it=>[it.id,it]));
+
+          for(const [dept, arr] of byDept){
+            arr.sort((a,b)=>{
+              const af=a.date.localeCompare(b.date);
+              if(af!==0) return af;
+              const an=(itemsMap.get(a.itemId)?.name||'(Eliminado)').localeCompare(itemsMap.get(b.itemId)?.name||'(Eliminado)','es',{sensitivity:'base'});
+              return an;
+            });
+
+            const rows = [];
+            rows.push(["Departamento", dept]);   // Título con el nombre del departamento
+            rows.push([""]);                     // Línea en blanco
+            rows.push(["Fecha","Producto","Cantidad","Tipo","Notas"]); // Cabecera
+
+            for(const mv of arr){
+              rows.push([
+                mv.date,
+                itemsMap.get(mv.itemId)?.name || '(Eliminado)',
+                Number(mv.qty||0),
+                mv.type,
+                mv.notes||""
+              ]);
+            }
+
+            const file = `entregas_depto_${safeFile(dept)}_${state.fromDate}_a_${state.toDate}`;
+            downloadCSV(file, rows);
+          }
+
+          showToast(`Descargados ${byDept.size} archivo(s) por Departamento`, 'ok', 2000);
         }
 
         const repContainer = document.getElementById('repContainer');
@@ -786,6 +875,13 @@ Arcoíris
             showToast('CSV (Jardín, Fecha, Producto, Cantidad) descargado', 'ok', 1600);
           };
         }
+
+        const btnExpPerGarden = document.getElementById('btnExpPerGarden');
+        btnExpPerGarden && (btnExpPerGarden.onclick = exportPerGarden);
+
+        // Nuevo botón: por Departamento
+        const btnExpPerDept = document.getElementById('btnExpPerDept');
+        btnExpPerDept && (btnExpPerDept.onclick = exportPerDepartment);
       }
 
       // ===== Config =====
@@ -816,7 +912,7 @@ Arcoíris
           reader.readAsText(f);
         };
 
-        // ===== Transferencia PC→Celular (¡línea corregida!) =====
+        // Transferencia PC→Celular (corregido)
         const btnMakeTransferFile = $("#btnMakeTransferFile");
         const fileTransferImport   = $("#fileTransferImport");
 
@@ -868,7 +964,7 @@ Arcoíris
           reader.readAsText(f);
         });
 
-        // Lista OFICIAL de Jardines/Destinos
+        // OFICIAL de Jardines/Destinos
         const txtOfficial = $("#txtOfficialDests");
         const btnLoadCur  = $("#btnOfficialLoadFromCurrent");
         const btnSaveOff  = $("#btnOfficialSave");

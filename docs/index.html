@@ -6,9 +6,13 @@
   <title>Bodega Regional · Inventario (Online)</title>
 
   <style>
-    :root{--bg:#f6f7fb;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;--pri:#2563eb;--ok:#059669;--bad:#b91c1c;--warn:#b45309}
+    :root{
+      --bg:#f6f7fb;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --pri:#2563eb;--ok:#059669;--bad:#b91c1c;--warn:#b45309
+    }
     *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,"Noto Sans",sans-serif}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,"Noto Sans",sans-serif}
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
     .top{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
     h1{font-size:20px;margin:0}
@@ -42,25 +46,15 @@
     .badge.high{background:#dcfce7;color:#166534}
     @media (max-width:900px){.g-3{grid-template-columns:1fr}.g-2{grid-template-columns:1fr}}
 
-    /* ===== Aviso flotante (toast) ===== */
+    /* Toast */
     .toast {
-      position: fixed;
-      left: 50%;
-      bottom: 24px;
-      transform: translateX(-50%);
-      background: #065f46; /* verde éxito */
-      color: #fff;
-      padding: 10px 14px;
-      border-radius: 10px;
-      box-shadow: 0 8px 20px rgba(0,0,0,.18);
-      font-size: 14px;
-      z-index: 9999;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .25s ease, transform .25s ease;
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      background: #065f46; color: #fff; padding: 10px 14px; border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0,0,0,.18); font-size: 14px; z-index: 9999;
+      opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-    .toast.error { background: #b91c1c; } /* rojo error */
+    .toast.error { background: #b91c1c; }
   </style>
 </head>
 
@@ -93,12 +87,11 @@
     </div>
   </footer>
 
-  <!-- Contenedor del toast -->
   <div id="toast" class="toast" aria-live="polite"></div>
 
   <script>
   (function(){
-    // ===== Helpers =====
+    /* ===== Helpers ===== */
     const $=(s,c=document)=>c.querySelector(s);
     const $$=(s,c=document)=>Array.from(c.querySelectorAll(s));
     const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -113,62 +106,27 @@
     const unique=(arr)=>Array.from(new Set(arr));
     const safeFile=(s)=>String(s||'').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80);
 
-    // ===== Formateo de fecha D-M-AAAA (sin ceros a la izquierda) =====
-    function dateNameDMY(d=new Date()){
-      const dd = d.getDate();
-      const mm = d.getMonth()+1;
-      const yy = d.getFullYear();
-      return `${dd}-${mm}-${yy}`; // ej: 1-3-2026
-    }
+    function dateNameDMY(d=new Date()){ return `${d.getDate()}-${d.getMonth()+1}-${d.getFullYear()}`; }
 
-    // ===== Filtro por tipo de destino =====
-    function matchDestType(m, filter){
-      if(!filter) return true;               // '' = Todos
-      return (m.destType||'').trim() === filter;
-    }
-
-    // Toast reutilizable
     function showToast(msg, type='ok', ms=2200){
-      const el = document.getElementById('toast');
-      if(!el) return;
-      el.textContent = msg;
-      el.classList.remove('error');
-      if(type==='error') el.classList.add('error');
-      el.classList.add('show');
-      clearTimeout(showToast.__t);
-      showToast.__t = setTimeout(()=> el.classList.remove('show'), ms);
+      const el = $('#toast'); if(!el) return;
+      el.textContent = msg; el.classList.remove('error'); if(type==='error') el.classList.add('error');
+      el.classList.add('show'); clearTimeout(showToast.__t); showToast.__t=setTimeout(()=>el.classList.remove('show'), ms);
     }
 
-    // ===== CSV Excel-friendly: UTF-16 LE + BOM + sep=; =====
-    function downloadCSV(filename, rows, delimiter = ';'){
-      const esc = (s) => {
-        if (s == null) return "";
-        const t = String(s).replace(/"/g, '""');
-        return /["\r\n;]|^\s|\s$/.test(t) ? `"${t}"` : t;
-      };
-      const body   = rows.map(r => r.map(c => esc(c)).join(delimiter)).join("\r\n");
-      const text   = `sep=${delimiter}\r\n` + body + "\r\n";
-      // UTF‑16 LE buffer (+1 para BOM)
-      const buf = new Uint16Array(text.length + 1);
-      buf[0] = 0xFEFF; // BOM
-      for (let i = 0; i < text.length; i++) buf[i+1] = text.charCodeAt(i);
-      const blob = new Blob([buf], { type: "text/csv;charset=utf-16le" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename.endsWith(".csv") ? filename : filename + ".csv";
-      a.click();
-      URL.revokeObjectURL(a.href);
+    function downloadCSV(filename, rows, delimiter=';'){
+      const esc = (s)=>{ if(s==null) return ""; const t=String(s).replace(/"/g,'""'); return /["\r\n;]|^\s|\s$/.test(t)?`"${t}"`:t; };
+      const body = rows.map(r=>r.map(c=>esc(c)).join(delimiter)).join("\r\n");
+      const text = `sep=${delimiter}\r\n` + body + "\r\n";
+      const buf = new Uint16Array(text.length+1); buf[0]=0xFEFF; for(let i=0;i<text.length;i++) buf[i+1]=text.charCodeAt(i);
+      const blob = new Blob([buf], {type:"text/csv;charset=utf-16le"});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download = filename.endsWith('.csv')?filename:filename+'.csv'; a.click(); URL.revokeObjectURL(a.href);
     }
 
     const CATS=["Artículos de aseo","Equipamiento","Insumos de impresora","Insumos de desayuno","Artículos de oficina"];
     const DEST_TYPES=["Departamento","Jardín","Bodega Peñuelas","Otro"]; // incluye Bodega Peñuelas
 
-    const LS={
-      items:"inv_off_items_v1",
-      moves:"inv_off_moves_v1",
-      dests:"inv_off_dests_v1",
-      officialDests:"inv_off_official_dests_v1"
-    };
+    const LS={ items:"inv_off_items_v1", moves:"inv_off_moves_v1", dests:"inv_off_dests_v1", officialDests:"inv_off_official_dests_v1" };
 
     let state={
       tab:"inicio",
@@ -180,73 +138,53 @@
       moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""},
       fromDate:startOfWeek(new Date()).toISOString().slice(0,10),
       toDate:endOfWeek(new Date()).toISOString().slice(0,10),
-      moveDestTypeFilter:""  // ''=Todos | 'Jardín' | 'Departamento' | 'Bodega Peñuelas'
+      moveDestTypeFilter:""
     };
 
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // Lista OFICIAL de Jardines/Destinos
     function getOfficialDests(){ return load(LS.officialDests, []); }
     function setOfficialDests(list){ save(LS.officialDests, Array.from(new Set((list||[]).map(s=>String(s).trim()).filter(Boolean)))); }
 
-    // Semillas de ítems base
     function seedItems(){
       return [
-        { id: uid(), code:'IMP-103A',    name:'Tóner 103 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
-        { id: uid(), code:'IMP-085A',    name:'Tóner 85 A',   category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
-        { id: uid(), code:'EQP-TOL-001', name:'Toldo Completo', category:'Equipamiento',       unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'IMP-103A', name:'Tóner 103 A', category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'IMP-085A', name:'Tóner 85 A',  category:'Insumos de impresora', unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'EQP-TOL-001', name:'Toldo Completo', category:'Equipamiento', unit:'Unidad', minStock:0, initialStock:0 },
         { id: uid(), code:'ASE-BAS-5055',name:'Bolsa Basura 50x55x10 Unidades Paquete', category:'Artículos de aseo', unit:'Paquete', minStock:0, initialStock:0 },
-        { id: uid(), code:'ASE-DET-800', name:'Detergente en Polvo 800 Grs',           category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 },
-        { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido',        category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
+        { id: uid(), code:'ASE-DET-800', name:'Detergente en Polvo 800 Grs', category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 },
+        { id: uid(), code:'ASE-DIS-JAB', name:'Dispensador Para Jabón Liquido', category:'Artículos de aseo', unit:'Unidad',  minStock:0, initialStock:0 }
       ];
     }
 
-    // Aplica ítems base y destinos (si hay OFICIAL, usa OFICIAL)
     function applySeed(){
       const official = getOfficialDests();
       state.items = seedItems();
-      state.dests = official.length>0
-        ? unique([...(state.dests||[]), ...official])
-        : unique([...(state.dests||[]), 'Bambi','Sol del Valle']);
+      state.dests = official.length>0 ? unique([...(state.dests||[]), ...official]) : unique([...(state.dests||[]),'Bambi','Sol del Valle']);
       persist();
     }
 
-    // Semilla automática / forzar por URL
     (function seedOnLoad(){
       try{
-        const force = (qs('seed') === '1');
-        const isEmpty = !state.items || state.items.length===0;
-        if (isEmpty || force){
-          if (isEmpty){ applySeed(); }
-        }
+        const force = (qs('seed')==='1'); const isEmpty = !state.items || state.items.length===0;
+        if(isEmpty || force){ if(isEmpty){ applySeed(); } }
       }catch(e){}
     })();
 
-    // ===== Utilidades cálculo/exports =====
+    /* ===== Cálculos / Exportes ===== */
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
 
-    // Export de movimientos (respeta filtro de tipo si se pasa)
-    function exportMovimientos(destTypeFilter = ''){
+    function matchDestType(m, filter){ if(!filter) return true; return (m.destType||'').trim()===filter; }
+
+    function exportMovimientos(destTypeFilter=''){
       const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
-      const movs=state.moves
-        .filter(m=>within(m.date,state.fromDate,state.toDate))
-        .filter(m=>matchDestType(m, destTypeFilter));
-
+      const movs=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate)).filter(m=>matchDestType(m,destTypeFilter));
       for(const mv of movs){
         const it=itemsMap[mv.itemId];
-        rows.push([
-          mv.date,
-          mv.type,
-          it?it.name:"(Eliminado)",
-          it?it.category:"",
-          mv.qty,
-          mv.dest||"",
-          mv.destType||"",
-          mv.notes||""
-        ]);
+        rows.push([mv.date,mv.type,it?it.name:"(Eliminado)",it?it.category:"",mv.qty,mv.dest||"",mv.destType||"",mv.notes||""]);
       }
       const suffix = destTypeFilter ? `_tipo_${destTypeFilter.replace(/\s+/g,'_')}` : '';
       downloadCSV(`movimientos${suffix}_${state.fromDate}_a_${state.toDate}`,rows);
@@ -274,21 +212,15 @@
       downloadCSV(`reporte_semanal_${state.fromDate}_${state.toDate}`,rows);
     }
 
-    // ===== UI =====
+    /* ===== UI ===== */
     function render(){
       const main=$("#main");
       const sb=stockByItem();
+      const LOW_THR=15, HIGH_THR=50;
 
-      // Umbrales para Inicio
-      const LOW_THR = 15;
-      const HIGH_THR = 50;
-
-      const lowItems = state.items
-        .filter(it => (sb[it.id]||0) <= LOW_THR)
+      const lowItems = state.items.filter(it => (sb[it.id]||0) <= LOW_THR)
         .sort((a,b)=> (sb[a.id]-sb[b.id]) || a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
-
-      const highItems = state.items
-        .filter(it => (sb[it.id]||0) >= HIGH_THR)
+      const highItems = state.items.filter(it => (sb[it.id]||0) >= HIGH_THR)
         .sort((a,b)=> (sb[b.id]-sb[a.id]) || a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
 
       const tabsHtml={
@@ -303,9 +235,7 @@
             <div class="row" style="justify-content:space-between;align-items:baseline">
               <h3>Informe de stock</h3>
               <div class="muted" style="font-size:13px">
-                Umbrales: <span class="badge low">Bajo ≤ ${LOW_THR}</span>
-                &nbsp;|&nbsp;
-                <span class="badge high">Alto ≥ ${HIGH_THR}</span>
+                Umbrales: <span class="badge low">Bajo ≤ ${LOW_THR}</span> | <span class="badge high">Alto ≥ ${HIGH_THR}</span>
               </div>
             </div>
 
@@ -317,26 +247,17 @@
                 </div>
                 <div style="overflow-x:auto">
                   <table>
-                    <thead>
-                      <tr>
-                        <th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${
-                        lowItems.length===0
-                        ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin productos en bajo stock (≤ ${LOW_THR})</td></tr>`
-                        : lowItems.map(it=>`
-                          <tr>
-                            <td>${it.code||''}</td>
-                            <td>${it.name}</td>
-                            <td>${it.category}</td>
-                            <td>${it.unit||'Unidad'}</td>
-                            <td>${Number(it.minStock||0)}</td>
-                            <td class="warn">${Number(sb[it.id]||0)}</td>
-                          </tr>
-                        `).join('')
-                      }
+                    <thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th></tr></thead>
+                    <tbody>${
+                      lowItems.length===0
+                      ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin productos en bajo stock</td></tr>`
+                      : lowItems.map(it=>`
+                        <tr>
+                          <td>${it.code||''}</td><td>${it.name}</td><td>${it.category}</td>
+                          <td>${it.unit||'Unidad'}</td><td>${Number(it.minStock||0)}</td>
+                          <td class="warn">${Number(sb[it.id]||0)}</td>
+                        </tr>
+                      `).join('')}
                     </tbody>
                   </table>
                 </div>
@@ -349,27 +270,17 @@
                 </div>
                 <div style="overflow-x:auto">
                   <table>
-                    <thead>
-                      <tr>
-                        <th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${
-                        highItems.length===0
-                        ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin productos en alto stock (≥ ${HIGH_THR})</td></tr>`
-                        : highItems.map(it=>`
-                          <tr>
-                            <td>${it.code||''}</td>
-                            <td>${it.name}</td>
-                            <td>${it.category}</td>
-                            <td>${it.unit||'Unidad'}</td>
-                            <td>${Number(it.minStock||0)}</td>
-                            <!-- Alto stock en VERDE -->
-                            <td class="ok">${Number(sb[it.id]||0)}</td>
-                          </tr>
-                        `).join('')
-                      }
+                    <thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th></tr></thead>
+                    <tbody>${
+                      highItems.length===0
+                      ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin productos en alto stock</td></tr>`
+                      : highItems.map(it=>`
+                        <tr>
+                          <td>${it.code||''}</td><td>${it.name}</td><td>${it.category}</td>
+                          <td>${it.unit||'Unidad'}</td><td>${Number(it.minStock||0)}</td>
+                          <td class="ok">${Number(sb[it.id]||0)}</td>
+                        </tr>
+                      `).join('')}
                     </tbody>
                   </table>
                 </div>
@@ -377,36 +288,31 @@
             </div>
           </section>
         `,
+
         inventario: `
           <section class="grid g-2">
             <div class="card">
               <h3>Nuevo/editar ítem</h3>
-              <div>
-                <label>Código</label>
-                <input id="it_code" value="${state.itemForm.code}" placeholder="SKU o interno"/>
-                <label>Artículo *</label>
-                <input id="it_name" value="${state.itemForm.name}" placeholder="Ej.: Papel higiénico"/>
-                <label>Categoría *</label>
-                <select id="it_cat">${['',...CATS].map(c=>`<option ${state.itemForm.category===c?'selected':''} value='${c}'>${c||'-- Seleccione --'}</option>`).join('')}</select>
-                <label>Unidad</label>
-                <input id="it_unit" value="${state.itemForm.unit}" placeholder="Unidad, Caja, Paquete, Kg"/>
-                <div class="grid g-2">
-                  <div><label>Stock mínimo</label><input id="it_min" type="number" value="${state.itemForm.minStock}"/></div>
-                  <div><label>Stock inicial</label><input id="it_init" type="number" value="${state.itemForm.initialStock}"/></div>
-                </div>
-                <div class="row" style="gap:8px;margin-top:8px">
-                  <button class="btn pri" id="btnSaveItem">Guardar</button>
-                  <button class="btn" id="btnClearItem">Limpiar</button>
-                </div>
+              <label>Código</label><input id="it_code" value="${state.itemForm.code}" placeholder="SKU o interno"/>
+              <label>Artículo *</label><input id="it_name" value="${state.itemForm.name}" placeholder="Ej.: Papel higiénico"/>
+              <label>Categoría *</label>
+              <select id="it_cat">
+                ${['',...CATS].map(c=>`<option ${state.itemForm.category===c?'selected':''} value='${c}'>${c||'-- Seleccione --'}</option>`).join('')}
+              </select>
+              <label>Unidad</label><input id="it_unit" value="${state.itemForm.unit}" placeholder="Unidad, Caja, Paquete, Kg"/>
+              <div class="grid g-2">
+                <div><label>Stock mínimo</label><input id="it_min" type="number" value="${state.itemForm.minStock}"/></div>
+                <div><label>Stock inicial</label><input id="it_init" type="number" value="${state.itemForm.initialStock}"/></div>
+              </div>
+              <div class="row" style="gap:8px;margin-top:8px">
+                <button class="btn pri" id="btnSaveItem">Guardar</button>
+                <button class="btn" id="btnClearItem">Limpiar</button>
               </div>
             </div>
 
             <div class="card">
               <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px">
-                <div style="flex:1">
-                  <label>Buscar</label>
-                  <input id="buscar" value="${state.buscar}" placeholder="Nombre, código, unidad"/>
-                </div>
+                <div style="flex:1"><label>Buscar</label><input id="buscar" value="${state.buscar}" placeholder="Nombre, código, unidad"/></div>
                 <div style="width:220px">
                   <label>Categoría</label>
                   <select id="catFiltro">${['',...CATS].map(c=>`<option ${state.catFiltro===c?'selected':''} value='${c}'>${c||'Todas'}</option>`).join('')}</select>
@@ -415,71 +321,75 @@
               </div>
 
               <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0">
-                <select id="selRemoveItem" style="min-width:260px">
-                  <option value="">-- Seleccione ítem a quitar --</option>
-                </select>
+                <select id="selRemoveItem" style="min-width:260px"><option value="">-- Seleccione ítem a quitar --</option></select>
                 <button class="btn bad" id="btnRemoveOne">Quitar ítem</button>
                 <button class="btn bad" id="btnRemoveAllItems">Quitar todos los ítems</button>
               </div>
 
               <div style="overflow-x:auto">
                 <table>
-                  <thead>
-                    <tr>
-                      <th>Código</th><th>Artículo</th><th>Categoría</th>
-                      <th>Unidad</th><th>Mínimo</th><th>Existencias</th><th class='right'>Acciones</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Unidad</th><th>Mínimo</th><th>Existencias</th><th class='right'>Acciones</th></tr></thead>
                   <tbody id="inv_rows"></tbody>
                 </table>
               </div>
             </div>
           </section>
         `,
+
+        /* ===== MOVIMIENTOS: Registrar movimiento MÁS ANCHA ===== */
         movimientos: `
-          <section class="grid g-2">
+          <!-- grid personalizado: 1.4fr (izquierda) / 1fr (derecha) -->
+          <section style="display:grid;grid-template-columns:1.4fr 1fr;gap:12px">
             <div class="card">
               <h3>Registrar movimiento</h3>
               <label>Fecha *</label>
               <input id="mv_date" type="date" value="${state.moveForm.date}"/>
+
               <label>Tipo *</label>
-              <select id="mv_type"><option ${state.moveForm.type==='entrada'?'selected':''} value="entrada">entrada</option><option ${state.moveForm.type==='salida'?'selected':''} value="salida">salida</option></select>
+              <select id="mv_type">
+                <option ${state.moveForm.type==='entrada'?'selected':''} value="entrada">entrada</option>
+                <option ${state.moveForm.type==='salida'?'selected':''} value="salida">salida</option>
+              </select>
+
               <label>Artículo *</label>
-              <select id="mv_item"><option value="">-- Seleccione --</option>${
-                state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
-                .map(it=>`<option ${state.moveForm.itemId===it.id?'selected':''} value='${it.id}'>${it.name} · ${it.category}</option>`).join('')
-              }</select>
+              <select id="mv_item">
+                <option value="">-- Seleccione --</option>
+                ${state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
+                  .map(it=>`<option ${state.moveForm.itemId===it.id?'selected':''} value='${it.id}'>${it.name} · ${it.category}</option>`).join('')}
+              </select>
+
               <label>Cantidad *</label>
               <input id="mv_qty" type="number" min="1" value="${state.moveForm.qty}"/>
+
               <div class="grid g-2">
                 <div>
                   <label>Tipo de destino/origen</label>
-                  <select id="mv_destType">${DEST_TYPES.map(t=>`<option ${state.moveForm.destType===t?'selected':''} value='${t}'>${t}</option>`).join('')}</select>
+                  <select id="mv_destType">
+                    ${DEST_TYPES.map(t=>`<option ${state.moveForm.destType===t?'selected':''} value='${t}'>${t}</option>`).join('')}
+                  </select>
                 </div>
                 <div>
                   <label>Destino/Origen</label>
                   <input id="mv_dest" value="${state.moveForm.dest}" list="ls_dests" placeholder="Ej.: Jardín Las Flores"/>
-                  <datalist id="ls_dests">${state.dests.slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).map(d=>`<option value='${d}'></option>`).join('')}</datalist>
+                  <datalist id="ls_dests">
+                    ${state.dests.slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).map(d=>`<option value='${d}'></option>`).join('')}
+                  </datalist>
                 </div>
               </div>
+
               <label>Notas (opcional)</label>
               <input id="mv_notes" value="${state.moveForm.notes}"/>
+
               <div class="row" style="gap:8px;margin-top:8px">
                 <button class="btn pri" id="btnSaveMove">Guardar</button>
                 <button class="btn" id="btnClearMove">Limpiar</button>
               </div>
             </div>
+
             <div class="card">
-              <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px">
-                <div style="width:200px">
-                  <label>Desde</label>
-                  <input id="fromDate" type="date" value="${state.fromDate}"/>
-                </div>
-                <div style="width:200px">
-                  <label>Hasta</label>
-                  <input id="toDate" type="date" value="${state.toDate}"/>
-                </div>
-                <!-- Filtro por Tipo de destino -->
+              <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap">
+                <div style="width:200px"><label>Desde</label><input id="fromDate" type="date" value="${state.fromDate}"/></div>
+                <div style="width:200px"><label>Hasta</label><input id="toDate" type="date" value="${state.toDate}"/></div>
                 <div style="width:220px">
                   <label>Tipo destino</label>
                   <select id="mv_filter_destType">
@@ -489,15 +399,16 @@
                     <option value="Bodega Peñuelas" ${state.moveDestTypeFilter==='Bodega Peñuelas'?'selected':''}>Bodega Peñuelas</option>
                   </select>
                 </div>
-
                 <button class="btn ok" id="btnExpMovs">Descargar Excel (CSV)</button>
                 <button class="btn ok" id="btnWord">Comprobante (Word)</button>
               </div>
+
               <div style="overflow-x:auto">
                 <table>
                   <thead>
                     <tr>
-                      <th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Categoría</th><th>Cantidad</th><th>Destino/Origen</th><th>Tipo destino</th><th>Notas</th><th class='right'>Acciones</th>
+                      <th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Categoría</th><th>Cantidad</th>
+                      <th>Destino/Origen</th><th>Tipo destino</th><th>Notas</th><th class='right'>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>${
@@ -506,9 +417,7 @@
                       const list=state.moves
                         .filter(m=>within(m.date,state.fromDate,state.toDate))
                         .filter(m=>matchDestType(m, state.moveDestTypeFilter));
-
                       if(list.length===0) return `<tr><td colspan='9' class='muted' style='text-align:center;padding:16px'>Sin movimientos en el rango${state.moveDestTypeFilter?` (Tipo: ${state.moveDestTypeFilter})`:''}</td></tr>`;
-
                       return list.map(mv=>{
                         const it=itemsMap[mv.itemId];
                         return `<tr>
@@ -533,6 +442,7 @@
             </div>
           </section>
         `,
+
         reportes: `
           <section class="grid">
             <div class="card">
@@ -557,9 +467,9 @@
             </div>
           </section>
         `,
+
         config: `
           <section class="grid g-2">
-
             <div class="card">
               <h3>Acciones rápidas</h3>
               <div class="row" style="gap:8px;flex-wrap:wrap">
@@ -569,9 +479,6 @@
                   <input id="fileRestore" type="file" accept="application/json" style="display:none"/>
                 </label>
               </div>
-              <p class="muted" style="margin-top:6px">
-                “Poner todos los ítems (semilla)” carga los artículos base en este dispositivo.
-              </p>
             </div>
 
             <div class="card">
@@ -582,17 +489,10 @@
                   <input id="fileTransferImport" type="file" accept="application/json" style="display:none"/>
                 </label>
               </div>
-              <ol class="muted" style="margin:8px 0 0 18px">
-                <li>En PC, crea el archivo y envíalo al celular.</li>
-                <li>En el celular, importa el archivo aquí.</li>
-              </ol>
             </div>
 
             <div class="card" style="grid-column:1/-1">
               <h3>Lista oficial de Jardines/Destinos</h3>
-              <p class="muted" style="margin:6px 0">
-                Pega tu lista oficial (uno por línea). Guárdala como OFICIAL y aplícala en este u otros dispositivos.
-              </p>
               <textarea id="txtOfficialDests" rows="8" style="width:100%;" placeholder="Ejemplo:
 Jardín Bambi
 Sol del Valle
@@ -617,657 +517,340 @@ Arcoíris
       $("#main").innerHTML = tabsHtml[state.tab];
       $$(".tabs button").forEach(b=>{ b.classList.toggle("active", b.dataset.tab===state.tab); b.onclick = ()=> set({tab: b.dataset.tab}); });
 
-      // ===== INICIO: export CSV (bajo/alto stock) =====
+      /* INICIO: export CSV bajo/alto */
       if(state.tab==='inicio'){
-        const LOW_THR = 15, HIGH_THR = 50;
         const sb = stockByItem();
-        const lowItems = state.items.filter(it => (sb[it.id]||0) <= LOW_THR);
-        const highItems = state.items.filter(it => (sb[it.id]||0) >= HIGH_THR);
-
-        const toRows = (arr)=> {
-          const rows=[["Código","Artículo","Categoría","Unidad","Mínimo","Existencias"]];
-          arr.forEach(it=> rows.push([
-            it.code||"",
-            it.name,
-            it.category,
-            it.unit||"Unidad",
-            Number(it.minStock||0),
-            Number(sb[it.id]||0)
-          ]));
-          return rows;
-        };
-
-        const btnLow=$("#btnExpLowStock"), btnHigh=$("#btnExpHighStock");
-        btnLow && (btnLow.onclick = ()=> downloadCSV(`bajo_stock_<=${LOW_THR}_${todayISO()}`, toRows(lowItems)));
-        btnHigh && (btnHigh.onclick = ()=> downloadCSV(`alto_stock_>=${HIGH_THR}_${todayISO()}`, toRows(highItems)));
+        const toRows = (arr)=>{ const rows=[["Código","Artículo","Categoría","Unidad","Mínimo","Existencias"]];
+          arr.forEach(it=> rows.push([it.code||"",it.name,it.category,it.unit||"Unidad",Number(it.minStock||0),Number(sb[it.id]||0)])); return rows; };
+        const lowItems = state.items.filter(it => (sb[it.id]||0) <= 15);
+        const highItems = state.items.filter(it => (sb[it.id]||0) >= 50);
+        $("#btnExpLowStock")?.addEventListener('click', ()=> downloadCSV(`bajo_stock_<=15_${todayISO()}`, toRows(lowItems)));
+        $("#btnExpHighStock")?.addEventListener('click', ()=> downloadCSV(`alto_stock_>=50_${todayISO()}`, toRows(highItems)));
       }
 
-      // ===== Inventario =====
+      /* INVENTARIO */
       if(state.tab==='inventario'){
-        $("#buscar").oninput = (e)=>{ state.buscar = e.target.value; renderInventarioRows(); };
-        $("#catFiltro").onchange = (e)=>{ state.catFiltro = e.target.value; renderInventarioRows(); };
-
-        $("#btnExpInv").onclick = exportInventario;
-
+        $("#buscar").oninput = e=>{ state.buscar=e.target.value; renderInventarioRows(); };
+        $("#catFiltro").onchange = e=>{ state.catFiltro=e.target.value; renderInventarioRows(); };
+        $("#btnExpInv").onclick = ()=>{
+          const sb=stockByItem(); const rows=[["Código","Artículo","Categoría","Unidad","Stock mínimo","Existencias"]];
+          for(const it of state.items) rows.push([it.code||"",it.name,it.category,it.unit||"Unidad",Number(it.minStock||0),Number(sb[it.id]||0)]);
+          downloadCSV(`inventario_${todayISO()}`,rows);
+        };
         $("#btnSaveItem").onclick = ()=>{
-          const f = {
-            id: state.itemForm.id || uid(),
-            code: $("#it_code").value.trim(),
-            name: $("#it_name").value.trim(),
-            category: $("#it_cat").value,
-            unit: $("#it_unit").value.trim() || 'Unidad',
-            minStock: Number($("#it_min").value || 0),
-            initialStock: Number($("#it_init").value || 0)
-          };
+          const f={ id:state.itemForm.id||uid(), code:$("#it_code").value.trim(), name:$("#it_name").value.trim(),
+            category:$("#it_cat").value, unit:$("#it_unit").value.trim()||'Unidad',
+            minStock:Number($("#it_min").value||0), initialStock:Number($("#it_init").value||0) };
           if(!f.name || !f.category) return alert('Complete al menos Artículo y Categoría');
-
-          let items=[...state.items];
-          if(state.itemForm.id) items = items.map(it=> it.id===state.itemForm.id ? {...f} : it);
-          else items = [f, ...items];
-
+          let items=[...state.items]; items = state.itemForm.id ? items.map(it=> it.id===state.itemForm.id?{...f}:it) : [f,...items];
           set({items, itemForm:{id:null, code:'', name:'', category:'', unit:'Unidad', minStock:0, initialStock:0}});
         };
-
         $("#btnClearItem").onclick = ()=> set({itemForm:{id:null, code:'', name:'', category:'', unit:'Unidad', minStock:0, initialStock:0}});
-
         $("#btnRemoveOne").onclick = ()=>{
-          const sel = $("#selRemoveItem");
-          const id = (sel && sel.value) || '';
-          if(!id) return alert('Selecciona un ítem a quitar');
-          const it = state.items.find(x=>x.id===id);
-          if(!it) return alert('Ítem no encontrado');
-          if(!confirm(`¿Quitar el ítem "${it.name}"?`)) return;
-          set({ items: state.items.filter(x=>x.id!==id) });
+          const id=$("#selRemoveItem")?.value||''; if(!id) return alert('Selecciona un ítem a quitar');
+          const it=state.items.find(x=>x.id===id); if(!it) return alert('Ítem no encontrado');
+          if(!confirm(`¿Quitar el ítem "${it.name}"?`)) return; set({ items: state.items.filter(x=>x.id!==id) });
         };
-        $("#btnRemoveAllItems").onclick = ()=>{
-          if(!state.items.length) return alert('No hay ítems para quitar');
-          if(!confirm('Esto quitará TODOS los ítems. Los movimientos quedarán y mostrarán "(Eliminado)". ¿Continuar?')) return;
-          set({ items: [] });
-        };
-
-        fillRemoveSelector();
-        renderInventarioRows();
+        $("#btnRemoveAllItems").onclick = ()=>{ if(!state.items.length) return alert('No hay ítems');
+          if(!confirm('Esto quitará TODOS los ítems. Los movimientos quedarán y mostrarán "(Eliminado)". ¿Continuar?')) return; set({ items: [] }); };
+        fillRemoveSelector(); renderInventarioRows();
       }
 
-      // ===== Movimientos =====
+      /* MOVIMIENTOS */
       if(state.tab==='movimientos'){
         const syncLight=()=>{
-          state.moveForm = {
-            id: state.moveForm.id,
-            date: $("#mv_date").value || todayISO(),
-            type: $("#mv_type").value,
-            itemId: $("#mv_item").value,
-            qty: Number($("#mv_qty").value || 0),
-            destType: $("#mv_destType").value,
-            dest: $("#mv_dest").value,
-            notes: $("#mv_notes").value
+          state.moveForm={
+            id:state.moveForm.id,
+            date:$("#mv_date").value||todayISO(),
+            type:$("#mv_type").value,
+            itemId:$("#mv_item").value,
+            qty:Number($("#mv_qty").value||0),
+            destType:$("#mv_destType").value,
+            dest:$("#mv_dest").value,
+            notes:$("#mv_notes").value
           };
         };
         const refreshForm=()=> set({ moveForm:{...state.moveForm} });
 
-        $("#mv_date").onchange = ()=>{ syncLight(); refreshForm(); };
-        $("#mv_type").onchange = ()=>{ syncLight(); refreshForm(); };
-        $("#mv_item").onchange = ()=>{ syncLight(); refreshForm(); };
-        $("#mv_destType").onchange = ()=>{ syncLight(); refreshForm(); };
-        $("#mv_dest").oninput = syncLight; $("#mv_notes").oninput = syncLight;
-        $("#mv_qty").onchange = ()=>{ syncLight(); refreshForm(); };
+        $("#mv_date").onchange=()=>{syncLight();refreshForm();};
+        $("#mv_type").onchange=()=>{syncLight();refreshForm();};
+        $("#mv_item").onchange=()=>{syncLight();refreshForm();};
+        $("#mv_destType").onchange=()=>{syncLight();refreshForm();};
+        $("#mv_dest").oninput=syncLight; $("#mv_notes").oninput=syncLight;
+        $("#mv_qty").onchange=()=>{syncLight();refreshForm();};
 
-        $("#fromDate").onchange = e=> set({fromDate:e.target.value});
-        $("#toDate").onchange = e=> set({toDate:e.target.value});
-
-        // Filtro por tipo de destino
-        const selFilter = document.getElementById('mv_filter_destType');
-        selFilter && (selFilter.onchange = (e)=> set({ moveDestTypeFilter: e.target.value }));
-
-        // Exportar respetando filtro actual
+        $("#fromDate").onchange=e=> set({fromDate:e.target.value});
+        $("#toDate").onchange=e=> set({toDate:e.target.value});
+        $("#mv_filter_destType")?.addEventListener('change', e=> set({ moveDestTypeFilter: e.target.value }));
         $("#btnExpMovs").onclick = ()=> exportMovimientos(state.moveDestTypeFilter);
 
-        const btnSaveMove = document.getElementById('btnSaveMove');
+        const btnSaveMove = $('#btnSaveMove');
         if(btnSaveMove){
           btnSaveMove.onclick = ()=>{
-            const f = {
+            const f={
               id: state.moveForm.id,
-              date: document.getElementById('mv_date')?.value || '',
-              type: document.getElementById('mv_type')?.value || '',
-              itemId: document.getElementById('mv_item')?.value || '',
-              qty: Number(document.getElementById('mv_qty')?.value || 0),
-              destType: document.getElementById('mv_destType')?.value || 'Departamento',
-              dest: (document.getElementById('mv_dest')?.value || '').trim(),
-              notes: (document.getElementById('mv_notes')?.value || '').trim()
+              date: $('#mv_date')?.value || '',
+              type: $('#mv_type')?.value || '',
+              itemId: $('#mv_item')?.value || '',
+              qty: Number($('#mv_qty')?.value || 0),
+              destType: $('#mv_destType')?.value || 'Departamento',
+              dest: ($('#mv_dest')?.value || '').trim(),
+              notes: ($('#mv_notes')?.value || '').trim()
             };
+            if(!f.date || !f.type || !f.itemId){ showToast('Completa Fecha, Tipo y Artículo','error',2600); return; }
+            if(f.qty<=0){ showToast('La cantidad debe ser mayor a 0','error',2600); return; }
 
-            if(!f.date || !f.type || !f.itemId){
-              showToast('Completa Fecha, Tipo y Artículo', 'error', 2600);
-              return;
-            }
-            if(f.qty<=0){
-              showToast('La cantidad debe ser mayor a 0', 'error', 2600);
-              return;
-            }
-
-            const newMv = {
-              id: f.id || uid(),
-              date: f.date,
-              type: f.type,
-              itemId: f.itemId,
-              qty: f.qty,
-              destType: f.destType,
-              dest: f.dest,
-              notes: f.notes
-            };
-
-            let moves = [...state.moves];
-            if(f.id){
-              moves = moves.map(m => m.id===f.id ? newMv : m);
-            }else{
-              moves = [newMv, ...moves];
-            }
-
-            const dests = newMv.dest ? Array.from(new Set([newMv.dest, ...state.dests])).slice(0,200) : state.dests;
-
-            const cleanForm = {
-              id:null,
-              date: todayISO(),
-              type: 'salida',
-              itemId: '',
-              qty: 1,
-              destType: 'Departamento',
-              dest: '',
-              notes: ''
-            };
-
-            set({ moves, dests, moveForm: cleanForm });
-            showToast('Movimiento guardado exitosamente', 'ok', 2200);
+            const newMv={ id:f.id||uid(), date:f.date, type:f.type, itemId:f.itemId, qty:f.qty, destType:f.destType, dest:f.dest, notes:f.notes };
+            let moves=[...state.moves]; moves = f.id ? moves.map(m=>m.id===f.id?newMv:m) : [newMv,...moves];
+            const dests=newMv.dest ? Array.from(new Set([newMv.dest, ...state.dests])).slice(0,200) : state.dests;
+            const cleanForm={ id:null, date:todayISO(), type:'salida', itemId:'', qty:1, destType:'Departamento', dest:'', notes:'' };
+            set({ moves, dests, moveForm: cleanForm }); showToast('Movimiento guardado exitosamente','ok',2200);
           };
         }
 
-        // Editar/Eliminar por fila
         document.querySelectorAll("[data-edit-move]").forEach(btn=>{
-          btn.onclick = ()=>{
-            const mv = state.moves.find(x=>x.id===btn.dataset.editMove);
-            if(!mv) return;
-            set({ moveForm:{...mv} });
-          };
+          btn.onclick=()=>{ const mv=state.moves.find(x=>x.id===btn.dataset.editMove); if(!mv) return; set({ moveForm:{...mv} }); };
         });
         document.querySelectorAll("[data-del-move]").forEach(btn=>{
-          btn.onclick = ()=>{
-            if(!confirm("¿Eliminar movimiento?")) return;
-            const id = btn.dataset.delMove;
-            set({ moves: state.moves.filter(m=>m.id!==id) });
-            showToast('Movimiento eliminado', 'ok', 1800);
-          };
+          btn.onclick=()=>{ if(!confirm("¿Eliminar movimiento?")) return; const id=btn.dataset.delMove; set({ moves: state.moves.filter(m=>m.id!==id) }); showToast('Movimiento eliminado','ok',1800); };
         });
       }
 
-      // ===== Informes =====
+      /* REPORTES */
       if(state.tab==='reportes'){
-        const itemsMap = Object.fromEntries(state.items.map(it=>[it.id,it]));
-        const movsInRange = () => state.moves.filter(m=>within(m.date, state.fromDate, state.toDate));
+        const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
+        const movsInRange=()=> state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
 
         function buildTableSemanal(){
-          const movs = movsInRange();
-          const map = new Map();
-          for (const mv of movs){
-            const s = (startOfWeek(parseISO(mv.date))).toISOString().slice(0,10);
-            const e = (endOfWeek(parseISO(mv.date))).toISOString().slice(0,10);
-            const key = `${s}_${e}_${mv.dest||'-'}`;
-            const it = itemsMap[mv.itemId];
+          const movs=movsInRange(); const map=new Map();
+          for(const mv of movs){
+            const s=startOfWeek(parseISO(mv.date)).toISOString().slice(0,10);
+            const e=endOfWeek(parseISO(mv.date)).toISOString().slice(0,10);
+            const key=`${s}_${e}_${mv.dest||'-'}`; const it=itemsMap[mv.itemId];
             if(!map.has(key)) map.set(key,{s,e,dest:mv.dest||'-',in:0,out:0,det:[]});
-            const n = map.get(key);
-            if(mv.type==='entrada') n.in+=Number(mv.qty||0); else n.out+=Number(mv.qty||0);
-            n.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
+            const g=map.get(key); if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
+            g.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',cantidad:mv.qty});
           }
-          const arr = Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
-
-          if(arr.length===0){
-            return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
-          }
+          const arr=Array.from(map.values()).sort((a,b)=> a.s.localeCompare(b.s) || (a.dest||'').localeCompare(b.dest||'','es',{sensitivity:'base'}));
+          if(arr.length===0) return `<p class="muted" style="padding:16px">No hay datos en el rango</p>`;
           return `
             <table>
               <thead><tr><th>Semana (Lun-Dom)</th><th>Destino</th><th>Entradas</th><th>Salidas</th><th>Detalle</th></tr></thead>
-              <tbody>
-                ${arr.map(g=>`
-                  <tr>
-                    <td class="nowrap">${g.s} a ${g.e}</td>
-                    <td>${g.dest}</td>
-                    <td>${g.in}</td>
-                    <td>${g.out}</td>
-                    <td>
-                      <ul style="margin:0 0 0 18px">
-                        ${g.det.map(d=>`<li>${d.articulo} · ${d.fecha} · ${d.tipo} · ${d.cantidad}</li>`).join('')}
-                      </ul>
-                    </td>
-                  </tr>
-                `).join('')}
+              <tbody>${arr.map(g=>`
+                <tr>
+                  <td class="nowrap">${g.s} a ${g.e}</td><td>${g.dest}</td><td>${g.in}</td><td>${g.out}</td>
+                  <td><ul style="margin:0 0 0 18px">${g.det.map(d=>`<li>${d.articulo} · ${d.fecha} · ${d.tipo} · ${d.cantidad}</li>`).join('')}</ul></td>
+                </tr>`).join('')}
               </tbody>
-            </table>
-          `;
+            </table>`;
         }
 
         function buildTablePorDestino(){
-          const movs = movsInRange();
-          if(movs.length===0) return `<p class="muted" style="padding:16px">No hay movimientos en el rango seleccionado.</p>`;
-
-          const map = new Map();
-          for(const mv of movs){
-            const dest = mv.dest && mv.dest.trim() ? mv.dest.trim() : '(Sin destino)';
-            if(!map.has(dest)) map.set(dest, {dest, in:0, out:0, det:[]});
-            const g = map.get(dest);
-            if(mv.type==='entrada') g.in += Number(mv.qty||0); else g.out += Number(mv.qty||0);
-            const it = itemsMap[mv.itemId];
-            g.det.push({
-              fecha: mv.date,
-              tipo: mv.type,
-              articulo: it?it.name:'(Eliminado)',
-              categoria: it?it.category:'',
-              cantidad: mv.qty
-            });
-          }
-
-          const arr = Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
-
-          let html = `
-            <table>
-              <thead>
-                <tr>
-                  <th>Jardín/Destino</th>
-                  <th>Entradas</th>
-                  <th>Salidas</th>
-                  <th>Detalle</th>
-                </tr>
-              </thead>
-              <tbody>
-          `;
-          for(const g of arr){
-            const detalle = g.det
-              .sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
-              .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`)
-              .join('; ');
-            html += `
-              <tr>
-                <td>${g.dest}</td>
-                <td>${g.in}</td>
-                <td>${g.out}</td>
-                <td>${detalle || '-'}</td>
-              </tr>
-            `;
-          }
-          html += `</tbody></table>`;
-          return html;
-        }
-
-        // CSV simple de entregas: Jardín | Fecha | Producto | Cantidad
-        function buildRowsSimpleJPQF(){
-          const movs = state.moves.filter(m => m.type==='salida' && within(m.date, state.fromDate, state.toDate));
-          const imap = new Map(state.items.map(it=>[it.id,it]));
-          movs.sort((a,b)=>{
-            const ad=(a.dest||'').localeCompare(b.dest||'','es',{sensitivity:'base'});
-            if(ad!==0) return ad;
-            const af=a.date.localeCompare(b.date);
-            if(af!==0) return af;
-            const an=(imap.get(a.itemId)?.name||'(Eliminado)').localeCompare(imap.get(b.itemId)?.name||'(Eliminado)','es',{sensitivity:'base'});
-            return an;
-          });
-          const rows = [["Jardín","Fecha","Producto","Cantidad"]];
-          for(const mv of movs){
-            rows.push([
-              (mv.dest||'').trim() || '(Sin destino)',
-              mv.date,
-              imap.get(mv.itemId)?.name || '(Eliminado)',
-              Number(mv.qty||0)
-            ]);
-          }
-          return rows;
-        }
-
-        // === Por Jardín: un archivo por Jardín (solo SALIDAS)
-        function exportPerGarden(){
-          const base = state.moves.filter(m => m.type==='salida' && within(m.date, state.fromDate, state.toDate) && (m.dest||'').trim()!=='');
-          if(base.length===0){ alert('No hay ENTREGAS (salidas) en el rango.'); return; }
-          const byDest = new Map();
-          for(const mv of base){
-            const d = (mv.dest||'').trim();
-            if(!byDest.has(d)) byDest.set(d, []);
-            byDest.get(d).push(mv);
-          }
-          const itemsMap = new Map(state.items.map(it=>[it.id,it]));
-          for(const [dest, arr] of byDest){
-            arr.sort((a,b)=>{
-              const af=a.date.localeCompare(b.date);
-              if(af!==0) return af;
-              const an=(itemsMap.get(a.itemId)?.name||'(Eliminado)').localeCompare(itemsMap.get(b.itemId)?.name||'(Eliminado)','es',{sensitivity:'base'});
-              return an;
-            });
-            const rows = [];
-            rows.push(["Jardín", dest]);
-            rows.push([""]);
-            rows.push(["Fecha","Producto","Cantidad","Tipo","Notas"]);
-            for(const mv of arr){
-              rows.push([
-                mv.date,
-                itemsMap.get(mv.itemId)?.name || '(Eliminado)',
-                Number(mv.qty||0),
-                mv.type,
-                mv.notes||""
-              ]);
-            }
-            const file = `entregas_${safeFile(dest)}_${state.fromDate}_a_${state.toDate}`;
-            downloadCSV(file, rows);
-          }
-          showToast(`Descargados ${byDest.size} archivo(s) por Jardín`, 'ok', 2000);
-        }
-
-        // === Por Departamento — un archivo por Departamento (solo SALIDAS)
-        function exportPerDepartment(){
-          const base = state.moves.filter(m =>
-            m.type==='salida' &&
-            m.destType==='Departamento' &&
-            within(m.date, state.fromDate, state.toDate) &&
-            (m.dest||'').trim()!==''
-          );
-          if(base.length===0){ alert('No hay ENTREGAS (salidas) a Departamentos en el rango.'); return; }
-
-          const byDept = new Map();
-          for(const mv of base){
-            const d = (mv.dest||'').trim();
-            if(!byDept.has(d)) byDept.set(d, []);
-            byDept.get(d).push(mv);
-          }
-
-          const itemsMap = new Map(state.items.map(it=>[it.id,it]));
-
-          for(const [dept, arr] of byDept){
-            arr.sort((a,b)=>{
-              const af=a.date.localeCompare(b.date);
-              if(af!==0) return af;
-              const an=(itemsMap.get(a.itemId)?.name||'(Eliminado)').localeCompare(itemsMap.get(b.itemId)?.name||'(Eliminado)','es',{sensitivity:'base'});
-              return an;
-            });
-
-            const rows = [];
-            rows.push(["Departamento", dept]);
-            rows.push([""]);
-            rows.push(["Fecha","Producto","Cantidad","Tipo","Notas"]);
-
-            for(const mv of arr){
-              rows.push([
-                mv.date,
-                itemsMap.get(mv.itemId)?.name || '(Eliminado)',
-                Number(mv.qty||0),
-                mv.type,
-                mv.notes||""
-              ]);
-            }
-
-            const file = `entregas_depto_${safeFile(dept)}_${state.fromDate}_a_${state.toDate}`;
-            downloadCSV(file, rows);
-          }
-
-          showToast(`Descargados ${byDept.size} archivo(s) por Departamento`, 'ok', 2000);
-        }
-
-        const repContainer = document.getElementById('repContainer');
-        const btnSem = document.getElementById('tabRepSem');
-        const btnDest = document.getElementById('tabRepDest');
-        function setActive(btn){ [btnSem,btnDest].forEach(b=>b && b.classList.remove('pri')); btn && btn.classList.add('pri'); }
-
-        if(repContainer){ repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); }
-
-        document.getElementById('fromDate').onchange = e=>{ state.fromDate=e.target.value; repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); };
-        document.getElementById('toDate').onchange   = e=>{ state.toDate=e.target.value; repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); };
-        document.getElementById('btnWeek').onclick   = ()=>{ state.fromDate=startOfWeek(new Date()).toISOString().slice(0,10); state.toDate=endOfWeek(new Date()).toISOString().slice(0,10); repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); };
-
-        btnSem && (btnSem.onclick = ()=>{ repContainer.innerHTML = buildTableSemanal(); setActive(btnSem); });
-        btnDest && (btnDest.onclick = ()=>{ repContainer.innerHTML = buildTablePorDestino(); setActive(btnDest); });
-
-        document.getElementById('btnExpRep').onclick = ()=> exportReporteSemanal();
-
-        document.getElementById('btnExpRepDest').onclick = ()=>{
-          const movs = movsInRange();
-          const map = new Map();
+          const movs=movsInRange(); if(movs.length===0) return `<p class="muted" style="padding:16px">No hay movimientos en el rango seleccionado.</p>`;
+          const map=new Map();
           for(const mv of movs){
             const dest = mv.dest && mv.dest.trim() ? mv.dest.trim() : '(Sin destino)';
             if(!map.has(dest)) map.set(dest,{dest,in:0,out:0,det:[]});
-            const it = itemsMap[mv.itemId];
-            const g = map.get(dest);
-            if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
-            g.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',categoria:it?it.category:'',cantidad:mv.qty});
+            const g=map.get(dest); if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
+            const it=itemsMap[mv.itemId]; g.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',categoria:it?it.category:'',cantidad:mv.qty});
           }
-          const arr = Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
-          const rows = [["Jardín/Destino","Entradas","Salidas","Detalle (fecha · tipo · artículo (categoría) · cantidad)"]];
+          const arr=Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+          let html=`<table><thead><tr><th>Jardín/Destino</th><th>Entradas</th><th>Salidas</th><th>Detalle</th></tr></thead><tbody>`;
           for(const g of arr){
-            const detalle = g.det
-              .sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
-              .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`)
-              .join('; ');
-            rows.push([g.dest, g.in, g.out, detalle]);
+            const detalle=g.det.sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
+              .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`).join('; ');
+            html+=`<tr><td>${g.dest}</td><td>${g.in}</td><td>${g.out}</td><td>${detalle||'-'}</td></tr>`;
           }
-          downloadCSV(`reporte_por_destino_${state.fromDate}_a_${state.toDate}`, rows);
-        };
-
-        const btnExpSimple = document.getElementById('btnExpSimple');
-        if (btnExpSimple){
-          btnExpSimple.onclick = ()=>{
-            const rows = buildRowsSimpleJPQF();
-            if(rows.length<=1){ alert('No hay ENTREGAS (salidas) en el rango seleccionado.'); return; }
-            downloadCSV(`entregas_por_jardin_${state.fromDate}_a_${state.toDate}`, rows);
-            showToast('CSV (Jardín, Fecha, Producto, Cantidad) descargado', 'ok', 1600);
-          };
+          html+=`</tbody></table>`; return html;
         }
 
-        const btnExpPerGarden = document.getElementById('btnExpPerGarden');
-        btnExpPerGarden && (btnExpPerGarden.onclick = exportPerGarden);
+        function buildRowsSimpleJPQF(){
+          const movs=state.moves.filter(m=>m.type==='salida' && within(m.date,state.fromDate,state.toDate));
+          const imap=new Map(state.items.map(it=>[it.id,it])); movs.sort((a,b)=>{
+            const ad=(a.dest||'').localeCompare(b.dest||'','es',{sensitivity:'base'}); if(ad!==0) return ad;
+            const af=a.date.localeCompare(b.date); if(af!==0) return af;
+            const an=(imap.get(a.itemId)?.name||'(Eliminado)').localeCompare(imap.get(b.itemId)?.name||'(Eliminado)','es',{sensitivity:'base'}); return an;
+          });
+          const rows=[["Jardín","Fecha","Producto","Cantidad"]];
+          for(const mv of movs){ rows.push([(mv.dest||'').trim()||'(Sin destino)', mv.date, imap.get(mv.itemId)?.name||'(Eliminado)', Number(mv.qty||0)]); }
+          return rows;
+        }
 
-        const btnExpPerDept = document.getElementById('btnExpPerDept');
-        btnExpPerDept && (btnExpPerDept.onclick = exportPerDepartment);
+        const repContainer=$("#repContainer"); const btnSem=$("#tabRepSem"); const btnDest=$("#tabRepDest");
+        function setActive(btn){ [btnSem,btnDest].forEach(b=>b&&b.classList.remove('pri')); btn&&btn.classList.add('pri'); }
+        if(repContainer){ repContainer.innerHTML=buildTablePorDestino(); setActive(btnDest); }
+        $("#fromDate").onchange=e=>{ state.fromDate=e.target.value; repContainer.innerHTML=buildTablePorDestino(); setActive(btnDest); };
+        $("#toDate").onchange=e=>{ state.toDate=e.target.value; repContainer.innerHTML=buildTablePorDestino(); setActive(btnDest); };
+        $("#btnWeek").onclick=()=>{ state.fromDate=startOfWeek(new Date()).toISOString().slice(0,10); state.toDate=endOfWeek(new Date()).toISOString().slice(0,10); repContainer.innerHTML=buildTablePorDestino(); setActive(btnDest); };
+        btnSem && (btnSem.onclick=()=>{ repContainer.innerHTML=buildTableSemanal(); setActive(btnSem); });
+        btnDest && (btnDest.onclick=()=>{ repContainer.innerHTML=buildTablePorDestino(); setActive(btnDest); });
+        $("#btnExpRep").onclick=()=> exportReporteSemanal();
+        $("#btnExpRepDest").onclick=()=>{
+          const movs=(()=>{ const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it])); const list=state.moves.filter(m=>within(m.date,state.fromDate,state.toDate));
+            const map=new Map(); for(const mv of list){ const dest=mv.dest&&mv.dest.trim()?mv.dest.trim():'(Sin destino)';
+              if(!map.has(dest)) map.set(dest,{dest,in:0,out:0,det:[]}); const it=itemsMap[mv.itemId];
+              const g=map.get(dest); if(mv.type==='entrada') g.in+=Number(mv.qty||0); else g.out+=Number(mv.qty||0);
+              g.det.push({fecha:mv.date,tipo:mv.type,articulo:it?it.name:'(Eliminado)',categoria:it?it.category:'',cantidad:mv.qty}); }
+            const arr=Array.from(map.values()).sort((a,b)=> (a.dest||'').localeCompare((b.dest||''),'es',{sensitivity:'base'}));
+            const rows=[["Jardín/Destino","Entradas","Salidas","Detalle (fecha · tipo · artículo (categoría) · cantidad)"]];
+            for(const g of arr){ const detalle=g.det.sort((a,b)=> a.fecha.localeCompare(b.fecha)||a.articulo.localeCompare(b.articulo,'es',{sensitivity:'base'}))
+              .map(d=>`${d.fecha} · ${d.tipo} · ${d.articulo} (${d.categoria||'-'}) · ${d.cantidad}`).join('; '); rows.push([g.dest,g.in,g.out,detalle]); }
+            return rows; })();
+          downloadCSV(`reporte_por_destino_${state.fromDate}_a_${state.toDate}`, movs);
+        };
+        $("#btnExpSimple").onclick=()=>{ const rows=buildRowsSimpleJPQF(); if(rows.length<=1){ alert('No hay ENTREGAS (salidas) en el rango.'); return; } downloadCSV(`entregas_por_jardin_${state.fromDate}_a_${state.toDate}`, rows); };
+        $("#btnExpPerGarden").onclick=()=>{
+          const base=state.moves.filter(m=>m.type==='salida'&&within(m.date,state.fromDate,state.toDate)&&(m.dest||'').trim()!==''); if(base.length===0){ alert('No hay ENTREGAS (salidas) en el rango.'); return; }
+          const byDest=new Map(); for(const mv of base){ const d=(mv.dest||'').trim(); if(!byDest.has(d)) byDest.set(d,[]); byDest.get(d).push(mv); }
+          const itemsMap=new Map(state.items.map(it=>[it.id,it]));
+          for(const [dest,arr] of byDest){
+            arr.sort((a,b)=> a.date.localeCompare(b.date) || (itemsMap.get(a.itemId)?.name||'').localeCompare(itemsMap.get(b.itemId)?.name||'','es',{sensitivity:'base'}));
+            const rows=[["Jardín",dest],[""],["Fecha","Producto","Cantidad","Tipo","Notas"]];
+            for(const mv of arr) rows.push([mv.date, itemsMap.get(mv.itemId)?.name || '(Eliminado)', Number(mv.qty||0), mv.type, mv.notes||""]);
+            downloadCSV(`entregas_${safeFile(dest)}_${state.fromDate}_a_${state.toDate}`, rows);
+          }
+          showToast(`Descargados ${byDest.size} archivo(s) por Jardín`, 'ok', 2000);
+        };
+        $("#btnExpPerDept").onclick=()=>{
+          const base=state.moves.filter(m=>m.type==='salida'&&m.destType==='Departamento'&&within(m.date,state.fromDate,state.toDate)&&(m.dest||'').trim()!=='');
+          if(base.length===0){ alert('No hay ENTREGAS (salidas) a Departamentos en el rango.'); return; }
+          const byDept=new Map(); for(const mv of base){ const d=(mv.dest||'').trim(); if(!byDept.has(d)) byDept.set(d,[]); byDept.get(d).push(mv); }
+          const itemsMap=new Map(state.items.map(it=>[it.id,it]));
+          for(const [dept,arr] of byDept){
+            arr.sort((a,b)=> a.date.localeCompare(b.date) || (itemsMap.get(a.itemId)?.name||'').localeCompare(itemsMap.get(b.itemId)?.name||'','es',{sensitivity:'base'}));
+            const rows=[["Departamento",dept],[""],["Fecha","Producto","Cantidad","Tipo","Notas"]];
+            for(const mv of arr) rows.push([mv.date, itemsMap.get(mv.itemId)?.name || '(Eliminado)', Number(mv.qty||0), mv.type, mv.notes||""]);
+            downloadCSV(`entregas_depto_${safeFile(dept)}_${state.fromDate}_a_${state.toDate}`, rows);
+          }
+          showToast(`Descargados ${byDept.size} archivo(s) por Departamento`, 'ok', 2000);
+        };
       }
 
-      // ===== Config =====
+      /* CONFIG */
       if(state.tab==='config'){
-        const btnCfgSeedAll = $("#btnCfgSeedAll");
-        btnCfgSeedAll && (btnCfgSeedAll.onclick = ()=>{
-          const hasItems = state.items && state.items.length>0;
+        $("#btnCfgSeedAll").onclick=()=>{ const hasItems=state.items && state.items.length>0;
           if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
-          applySeed(); render(); showToast('Ítems base cargados', 'ok', 1800);
-        });
-
-        // === RESPALDO: nombre "D-M-AAAA (respaldo).json" ===
-        $("#btnBackup").onclick = ()=>{
-          const data={ items:state.items, moves:state.moves, dests:state.dests };
-          const nombre = `${dateNameDMY(new Date())} (respaldo).json`; // ej: 1-3-2026 (respaldo).json
-          const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-          const a=document.createElement('a');
-          a.href=URL.createObjectURL(blob);
-          a.download = nombre;
-          a.click();
-          URL.revokeObjectURL(a.href);
-          showToast(`Respaldo descargado: ${nombre}`, 'ok', 1800);
+          applySeed(); render(); showToast('Ítems base cargados','ok',1800);
         };
 
-        $("#fileRestore").onchange = e=>{
+        /* Respaldo con nombre D-M-AAAA (respaldo).json */
+        $("#btnBackup").onclick=()=>{
+          const data={ items:state.items, moves:state.moves, dests:state.dests };
+          const nombre = `${dateNameDMY(new Date())} (respaldo).json`;
+          const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombre; a.click(); URL.revokeObjectURL(a.href);
+          showToast(`Respaldo descargado: ${nombre}`,'ok',1800);
+        };
+
+        $("#fileRestore").onchange=e=>{
           const f=e.target.files?.[0]; if(!f) return;
           const reader=new FileReader();
-          reader.onload=()=>{
-            try{
-              const data = JSON.parse(reader.result);
-              if(data.items && data.moves){ set({items:data.items, moves:data.moves, dests:data.dests||[]}); showToast('Respaldo cargado', 'ok', 1800); }
-              else showToast('Archivo inválido', 'error', 2200);
-            }catch{ showToast('No se pudo leer el archivo', 'error', 2200); }
-          };
+          reader.onload=()=>{ try{
+            const data=JSON.parse(reader.result);
+            if(data.items && data.moves){ set({items:data.items, moves:data.moves, dests:data.dests||[]}); showToast('Respaldo cargado','ok',1800); }
+            else showToast('Archivo inválido','error',2200);
+          }catch{ showToast('No se pudo leer el archivo','error',2200); } };
           reader.readAsText(f);
         };
 
-        // Transferencia PC→Celular
-        const btnMakeTransferFile = $("#btnMakeTransferFile");
-        const fileTransferImport   = $("#fileTransferImport");
-
-        btnMakeTransferFile && (btnMakeTransferFile.onclick = ()=>{
+        $("#btnMakeTransferFile").onclick=()=>{
           try{
-            const payload = {
-              transferVersion: 1,
-              createdAt: new Date().toISOString(),
-              items: state.items || [],
-              moves: state.moves || [],
-              dests: state.dests || [],
-              officialDests: getOfficialDests() || []
-            };
-            const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `transfer_inventario_${(new Date()).toISOString().slice(0,10)}.json`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-            showToast('Archivo de transferencia creado', 'ok', 1800);
-          }catch(e){
-            console.error(e);
-            showToast('No se pudo crear el archivo', 'error', 2200);
-          }
-        });
+            const payload={ transferVersion:1, createdAt:new Date().toISOString(), items:state.items||[], moves:state.moves||[], dests:state.dests||[], officialDests:getOfficialDests()||[] };
+            const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+            const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`transfer_inventario_${(new Date()).toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
+            showToast('Archivo de transferencia creado','ok',1800);
+          }catch(e){ console.error(e); showToast('No se pudo crear el archivo','error',2200); }
+        };
 
-        fileTransferImport && (fileTransferImport.onchange = (e)=>{
-          const f = e.target.files?.[0];
-          if (!f) return;
-          const reader = new FileReader();
-          reader.onload = () => {
-            try{
-              const data = JSON.parse(reader.result);
-              if (data && Array.isArray(data.items) && Array.isArray(data.moves)) {
-                set({
-                  items: data.items,
-                  moves: data.moves,
-                  dests: data.dests || state.dests
-                });
-                if (Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
-                showToast('Transferencia importada', 'ok', 1800);
-              } else {
-                showToast('Archivo de transferencia inválido', 'error', 2200);
-              }
-            }catch{
-              showToast('No se pudo leer el archivo', 'error', 2200);
-            }
-          };
+        $("#fileTransferImport").onchange=e=>{
+          const f=e.target.files?.[0]; if(!f) return;
+          const reader=new FileReader();
+          reader.onload=()=>{ try{
+            const data=JSON.parse(reader.result);
+            if(data && Array.isArray(data.items) && Array.isArray(data.moves)){
+              set({ items:data.items, moves:data.moves, dests:data.dests||state.dests });
+              if(Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
+              showToast('Transferencia importada','ok',1800);
+            }else showToast('Archivo de transferencia inválido','error',2200);
+          }catch{ showToast('No se pudo leer el archivo','error',2200); } };
           reader.readAsText(f);
-        });
+        };
 
-        // OFICIAL de Jardines/Destinos
-        const txtOfficial = $("#txtOfficialDests");
-        const btnLoadCur  = $("#btnOfficialLoadFromCurrent");
-        const btnSaveOff  = $("#btnOfficialSave");
-        const btnApplyOff = $("#btnOfficialApply");
-        const btnExpOff   = $("#btnOfficialExportJSON");
+        const txtOfficial=$("#txtOfficialDests");
+        const btnLoadCur=$("#btnOfficialLoadFromCurrent");
+        const btnSaveOff=$("#btnOfficialSave");
+        const btnApplyOff=$("#btnOfficialApply");
+        const btnExpOff=$("#btnOfficialExportJSON");
 
-        const off = getOfficialDests();
-        if (txtOfficial && (!txtOfficial.value || txtOfficial.value.trim()==='') && off.length>0){
-          txtOfficial.value = off.join("\n");
-        }
+        const off=getOfficialDests();
+        if(txtOfficial && (!txtOfficial.value || txtOfficial.value.trim()==='') && off.length>0){ txtOfficial.value=off.join("\n"); }
 
-        function linesToArray(raw){
-          return (raw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-        }
-
-        btnLoadCur && (btnLoadCur.onclick = ()=>{
-          const text = (state.dests||[]).slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).join('\n');
-          txtOfficial.value = text;
-          showToast('Cargados destinos actuales', 'ok', 1500);
-        });
-
-        btnSaveOff && (btnSaveOff.onclick = ()=>{
-          const list = linesToArray(txtOfficial.value);
-          if (!list.length) return showToast('Pega la lista oficial', 'error', 2000);
-          setOfficialDests(list);
-          showToast(`OFICIAL guardada (${list.length})`, 'ok', 1800);
-        });
-
-        btnApplyOff && (btnApplyOff.onclick = ()=>{
-          const list = getOfficialDests();
-          if (!list.length) return showToast('No hay OFICIAL guardada', 'error', 2000);
-          set({ dests: unique(list) });
-          showToast('OFICIAL aplicada en este dispositivo', 'ok', 1800);
-        });
-
-        btnExpOff && (btnExpOff.onclick = ()=>{
-          const list = getOfficialDests();
-          if (!list.length) return showToast('No hay OFICIAL', 'error', 2000);
-          const blob = new Blob([JSON.stringify({officialDests:list}, null, 2)], {type:'application/json'});
+        function linesToArray(raw){ return (raw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
+        btnLoadCur && (btnLoadCur.onclick=()=>{ txtOfficial.value=(state.dests||[]).slice().sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'})).join('\n'); showToast('Cargados destinos actuales','ok',1500); });
+        btnSaveOff && (btnSaveOff.onclick=()=>{ const list=linesToArray(txtOfficial.value); if(!list.length) return showToast('Pega la lista oficial','error',2000); setOfficialDests(list); showToast(`OFICIAL guardada (${list.length})`,'ok',1800); });
+        btnApplyOff && (btnApplyOff.onclick=()=>{ const list=getOfficialDests(); if(!list.length) return showToast('No hay OFICIAL guardada','error',2000); set({ dests: unique(list) }); showToast('OFICIAL aplicada','ok',1800); });
+        btnExpOff && (btnExpOff.onclick=()=>{ const list=getOfficialDests(); if(!list.length) return showToast('No hay OFICIAL','error',2000);
+          const blob=new Blob([JSON.stringify({officialDests:list},null,2)],{type:'application/json'});
           const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='oficial_jardines.json'; a.click(); URL.revokeObjectURL(a.href);
-          showToast('OFICIAL descargada', 'ok', 1600);
+          showToast('OFICIAL descargada','ok',1600);
         });
       }
     }
 
-    // ===== Inventario (pintado parcial) =====
+    /* Inventario (pintado parcial) */
     function fillRemoveSelector(){
-      const sel = document.getElementById('selRemoveItem');
-      if(!sel) return;
+      const sel=$("#selRemoveItem"); if(!sel) return;
       sel.innerHTML = `<option value="">-- Seleccione ítem a quitar --</option>` +
         state.items.slice().sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}))
-          .map(it=>`<option value="${it.id}">${it.name} · ${it.category}</option>`).join('');
+        .map(it=>`<option value="${it.id}">${it.name} · ${it.category}</option>`).join('');
     }
 
     function renderInventarioRows(){
-      const tbody = document.getElementById('inv_rows');
-      if(!tbody) return;
-
+      const tbody=$("#inv_rows"); if(!tbody) return;
       const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); }
 
-      const q = (state.buscar||'').trim().toLowerCase();
-      const list = state.items.filter(it=>{
+      const q=(state.buscar||'').trim().toLowerCase();
+      const list=state.items.filter(it=>{
         if(state.catFiltro && it.category!==state.catFiltro) return false;
         if(!q) return true;
-        return it.name.toLowerCase().includes(q)
-            || (it.code||'').toLowerCase().includes(q)
-            || (it.unit||'').toLowerCase().includes(q);
+        return it.name.toLowerCase().includes(q) || (it.code||'').toLowerCase().includes(q) || (it.unit||'').toLowerCase().includes(q);
       });
 
       if(list.length===0){
-        tbody.innerHTML = `<tr><td colspan='7' class='muted' style='text-align:center;padding:16px'>Sin resultados</td></tr>`;
+        tbody.innerHTML=`<tr><td colspan='7' class='muted' style='text-align:center;padding:16px'>Sin resultados</td></tr>`;
       }else{
-        tbody.innerHTML = list.map(it=>{
-          const acc0 = acc[it.id]||0;
-          const danger = acc0 <= Number(it.minStock||0) ? 'danger' : '';
-          return `
-            <tr>
-              <td>${it.code||''}</td>
-              <td>${it.name}</td>
-              <td>${it.category}</td>
-              <td>${it.unit||''}</td>
-              <td>${it.minStock||0}</td>
-              <td class='${danger}'>${acc0}</td>
-              <td class='right'>
-                <button class='btn' data-edit-item='${it.id}'>Editar</button>
-                <button class='btn bad' data-del-item='${it.id}'>Eliminar</button>
-              </td>
-            </tr>`;
+        tbody.innerHTML=list.map(it=>{
+          const exist=acc[it.id]||0; const danger= exist <= Number(it.minStock||0) ? 'danger':'';
+          return `<tr>
+            <td>${it.code||''}</td><td>${it.name}</td><td>${it.category}</td><td>${it.unit||''}</td>
+            <td>${it.minStock||0}</td><td class='${danger}'>${exist}</td>
+            <td class='right'>
+              <button class='btn' data-edit-item='${it.id}'>Editar</button>
+              <button class='btn bad' data-del-item='${it.id}'>Eliminar</button>
+            </td>
+          </tr>`;
         }).join('');
       }
 
       document.querySelectorAll("[data-edit-item]").forEach(btn=>{
-        btn.onclick = ()=>{
-          const it = state.items.find(x=>x.id===btn.dataset.editItem);
-          if(!it) return;
-          set({ itemForm:{...it} });
-        };
+        btn.onclick=()=>{ const it=state.items.find(x=>x.id===btn.dataset.editItem); if(!it) return; set({ itemForm:{...it} }); };
       });
       document.querySelectorAll("[data-del-item]").forEach(btn=>{
-        btn.onclick = ()=>{
-          if(!confirm("¿Eliminar ítem? Se mantendrán los movimientos históricos.")) return;
-          const id = btn.dataset.delItem;
-          set({ items: state.items.filter(it=>it.id!==id) });
-        };
+        btn.onclick=()=>{ if(!confirm("¿Eliminar ítem? Se mantendrán los movimientos históricos.")) return;
+          const id=btn.dataset.delItem; set({ items: state.items.filter(it=>it.id!==id) }); };
       });
 
       fillRemoveSelector();
     }
 
-    // ===== Botones superiores =====
-    $("#btnSeedAll").onclick = ()=>{
-      const hasItems = state.items && state.items.length>0;
+    /* Botones superiores */
+    $("#btnSeedAll").onclick=()=>{ const hasItems=state.items && state.items.length>0;
       if(hasItems && !confirm('Esto reemplazará los ítems actuales por los ítems base en este dispositivo. ¿Continuar?')) return;
-      applySeed(); render(); showToast('Ítems base cargados', 'ok', 1800);
+      applySeed(); render(); showToast('Ítems base cargados','ok',1800);
     };
 
-    $("#btnEjemplo").onclick = ()=>{
+    $("#btnEjemplo").onclick=()=>{
       if(!confirm('Esto agregará datos de ejemplo. ¿Continuar?')) return;
       const items=[
         { id:uid(), code:'ASE-001', name:'Detergente multiuso', category:'Artículos de aseo', unit:'Botella', minStock:5, initialStock:20 },
@@ -1275,7 +858,7 @@ Arcoíris
         { id:uid(), code:'IMP-101', name:'Tóner HP 44A', category:'Insumos de impresora', unit:'Unidad', minStock:3, initialStock:8 },
         { id:uid(), code:'DES-200', name:'Leche descremada 1L', category:'Insumos de desayuno', unit:'Caja (12)', minStock:4, initialStock:12 }
       ];
-      const idMap = Object.fromEntries(items.map(i=>[i.code,i.id]));
+      const idMap=Object.fromEntries(items.map(i=>[i.code,i.id]));
       const moves=[
         { id:uid(), date: todayISO(), type:'salida', itemId:idMap['ASE-001'], qty:3, destType:'Departamento', dest:'Recursos Humanos', notes:'Aseo de oficinas' },
         { id:uid(), date: todayISO(), type:'entrada', itemId:idMap['IMP-101'], qty:5, destType:'Otro', dest:'Proveedor', notes:'Compra mensual' },
@@ -1283,25 +866,19 @@ Arcoíris
       ];
       const dests=['Recursos Humanos','Jardín Arcoíris'];
       set({items:[...items, ...state.items], moves:[...moves, ...state.moves], dests: Array.from(new Set([...dests, ...state.dests]))});
-      showToast('Ejemplo cargado', 'ok', 1600);
+      showToast('Ejemplo cargado','ok',1600);
     };
 
-    $("#btnBorrar").onclick = ()=>{ if(confirm('Esto borrará TODO el inventario y movimientos de este dispositivo. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); showToast('Datos borrados', 'ok', 1600); } };
+    $("#btnBorrar").onclick=()=>{ if(confirm('Esto borrará TODO el inventario y movimientos de este dispositivo. ¿Seguro?')){ set({items:[],moves:[],dests:[]}); showToast('Datos borrados','ok',1600); } };
 
-    // ===== Render inicial & restauración desde enlace =====
+    /* Render inicial + restauración por query (si existiera) */
     render();
 
     (function restoreFromQuery(){
       try{
-        const p=new URLSearchParams(location.search);
-        const raw=p.get("data"); if(!raw) return;
-        const data=decodeBackup(raw);
-        if(data && data.items && data.moves){
-          state.items=data.items; state.moves=data.moves; state.dests=data.dests||[];
-          if (Array.isArray(data.officialDests)) setOfficialDests(data.officialDests);
-          persist();
-          showToast('Datos restaurados desde enlace', 'ok', 1800);
-        }
+        const p=new URLSearchParams(location.search); const raw=p.get("data"); if(!raw) return;
+        const data=decodeBackup(raw); if(data && data.items && data.moves){ state.items=data.items; state.moves=data.moves; state.dests=data.dests||[];
+          if(Array.isArray(data.officialDests)) setOfficialDests(data.officialDests); persist(); showToast('Datos restaurados desde enlace','ok',1800); }
       }catch{}
     })();
   })();

@@ -113,7 +113,15 @@
     const unique=(arr)=>Array.from(new Set(arr));
     const safeFile=(s)=>String(s||'').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80);
 
-    // ===== Comparador de tipo de destino (para filtro) =====
+    // ===== Formateo de fecha D-M-AAAA (sin ceros a la izquierda) =====
+    function dateNameDMY(d=new Date()){
+      const dd = d.getDate();
+      const mm = d.getMonth()+1;
+      const yy = d.getFullYear();
+      return `${dd}-${mm}-${yy}`; // ej: 1-3-2026
+    }
+
+    // ===== Filtro por tipo de destino =====
     function matchDestType(m, filter){
       if(!filter) return true;               // '' = Todos
       return (m.destType||'').trim() === filter;
@@ -172,14 +180,13 @@
       moveForm:{id:null,date:todayISO(),type:"salida",itemId:"",qty:1,destType:"Departamento",dest:"",notes:""},
       fromDate:startOfWeek(new Date()).toISOString().slice(0,10),
       toDate:endOfWeek(new Date()).toISOString().slice(0,10),
-      // NUEVO: filtro de tipo de destino en Movimientos
       moveDestTypeFilter:""  // ''=Todos | 'Jardín' | 'Departamento' | 'Bodega Peñuelas'
     };
 
     function set(p){ state={...state,...p}; render(); persist(); }
     function persist(){ save(LS.items,state.items); save(LS.moves,state.moves); save(LS.dests,state.dests); }
 
-    // Lista oficial de Jardines/Destinos
+    // Lista OFICIAL de Jardines/Destinos
     function getOfficialDests(){ return load(LS.officialDests, []); }
     function setOfficialDests(list){ save(LS.officialDests, Array.from(new Set((list||[]).map(s=>String(s).trim()).filter(Boolean)))); }
 
@@ -220,7 +227,7 @@
     function stockByItem(){ const acc={}; for(const it of state.items) acc[it.id]=Number(it.initialStock||0);
       for(const mv of state.moves){ const m=mv.type==="entrada"?1:-1; acc[mv.itemId]=(acc[mv.itemId]||0)+m*Number(mv.qty||0); } return acc; }
 
-    // ⚠️ Ajustada para respetar el filtro de tipo de destino cuando se le pasa
+    // Export de movimientos (respeta filtro de tipo si se pasa)
     function exportMovimientos(destTypeFilter = ''){
       const rows=[["Fecha","Tipo","Artículo","Categoría","Cantidad","Destino/Origen","Tipo destino","Notas"]];
       const itemsMap=Object.fromEntries(state.items.map(it=>[it.id,it]));
@@ -472,7 +479,7 @@
                   <label>Hasta</label>
                   <input id="toDate" type="date" value="${state.toDate}"/>
                 </div>
-                <!-- NUEVO: Filtro por Tipo de destino -->
+                <!-- Filtro por Tipo de destino -->
                 <div style="width:220px">
                   <label>Tipo destino</label>
                   <select id="mv_filter_destType">
@@ -562,6 +569,9 @@
                   <input id="fileRestore" type="file" accept="application/json" style="display:none"/>
                 </label>
               </div>
+              <p class="muted" style="margin-top:6px">
+                “Poner todos los ítems (semilla)” carga los artículos base en este dispositivo.
+              </p>
             </div>
 
             <div class="card">
@@ -705,7 +715,7 @@ Arcoíris
         $("#fromDate").onchange = e=> set({fromDate:e.target.value});
         $("#toDate").onchange = e=> set({toDate:e.target.value});
 
-        // NUEVO: cambio del filtro por tipo de destino
+        // Filtro por tipo de destino
         const selFilter = document.getElementById('mv_filter_destType');
         selFilter && (selFilter.onchange = (e)=> set({ moveDestTypeFilter: e.target.value }));
 
@@ -886,7 +896,7 @@ Arcoíris
           return html;
         }
 
-        // CSV simple: Jardín | Fecha | Producto | Cantidad (solo SALIDAS)
+        // CSV simple de entregas: Jardín | Fecha | Producto | Cantidad
         function buildRowsSimpleJPQF(){
           const movs = state.moves.filter(m => m.type==='salida' && within(m.date, state.fromDate, state.toDate));
           const imap = new Map(state.items.map(it=>[it.id,it]));
@@ -1061,12 +1071,19 @@ Arcoíris
           applySeed(); render(); showToast('Ítems base cargados', 'ok', 1800);
         });
 
+        // === RESPALDO: nombre "D-M-AAAA (respaldo).json" ===
         $("#btnBackup").onclick = ()=>{
           const data={ items:state.items, moves:state.moves, dests:state.dests };
+          const nombre = `${dateNameDMY(new Date())} (respaldo).json`; // ej: 1-3-2026 (respaldo).json
           const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download = `respaldo_inventario_${todayISO()}.json`; a.click(); URL.revokeObjectURL(a.href);
-          showToast('Respaldo descargado', 'ok', 1500);
+          const a=document.createElement('a');
+          a.href=URL.createObjectURL(blob);
+          a.download = nombre;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          showToast(`Respaldo descargado: ${nombre}`, 'ok', 1800);
         };
+
         $("#fileRestore").onchange = e=>{
           const f=e.target.files?.[0]; if(!f) return;
           const reader=new FileReader();
